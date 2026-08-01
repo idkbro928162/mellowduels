@@ -20,16 +20,6 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
-/**
- * Manages arena templates and the generated, playable copies of them.
- *
- * Templates are captured using Bukkit/Paper's native Structure API
- * (org.bukkit.structure.Structure), which is built into the server since
- * 1.17 and requires no external WorldEdit dependency. A template is captured
- * once by an admin, then this manager pastes as many copies as needed onto a
- * spaced-out grid in the configured arenas world, tracking each copy as its
- * own reservable Arena instance.
- */
 public class ArenaManager {
 
     private final MellowDuels plugin;
@@ -55,7 +45,6 @@ public class ArenaManager {
     }
 
     public void loadArenas() {
-        // Load templates (previously captured .nbt structure files)
         StructureManager sm = Bukkit.getStructureManager();
         File[] files = templatesFolder().listFiles((d, name) -> name.endsWith(".nbt"));
         if (files != null) {
@@ -70,7 +59,6 @@ public class ArenaManager {
             }
         }
 
-        // Load previously generated arena copies from arenas.yml
         File index = arenasIndexFile();
         if (index.exists()) {
             YamlConfiguration yaml = YamlConfiguration.loadConfiguration(index);
@@ -109,12 +97,6 @@ public class ArenaManager {
         arenasByTemplate.computeIfAbsent(arena.getTemplateName(), k -> new ArrayList<>()).add(arena);
     }
 
-    /**
-     * Captures a new arena template from a selected region in the world, saving
-     * it as a reusable .nbt structure file. Relative spawn offsets (from the
-     * min corner of the selection) are stored so pasted copies get correct
-     * per-copy spawn points automatically.
-     */
     public boolean captureTemplate(String name, Location corner1, Location corner2,
                                      BlockVector relativeSpawnA, BlockVector relativeSpawnB) {
         World world = corner1.getWorld();
@@ -140,7 +122,6 @@ public class ArenaManager {
             sm.saveStructure(out, structure);
             templates.put(name, structure);
 
-            // Persist relative spawn/size metadata for this template
             File index = new File(plugin.getDataFolder(), "arena-templates/" + name + ".meta.yml");
             YamlConfiguration meta = new YamlConfiguration();
             meta.set("size.x", sizeX);
@@ -160,7 +141,6 @@ public class ArenaManager {
         }
     }
 
-    /** Pastes a new playable copy of the given template at the next free grid slot. */
     public Arena generateCopy(String templateName) {
         Structure structure = templates.get(templateName);
         if (structure == null) {
@@ -201,7 +181,6 @@ public class ArenaManager {
         return arena;
     }
 
-    /** Finds a free arena for the given template preference (or any template if null), generating one if needed. */
     public Arena reserveArena(String preferredTemplate) {
         List<Arena> candidates;
         if (preferredTemplate != null && arenasByTemplate.containsKey(preferredTemplate)) {
@@ -218,7 +197,6 @@ public class ArenaManager {
             }
         }
 
-        // Nothing free - generate one on demand if we know the template
         String templateToUse = preferredTemplate != null ? preferredTemplate
                 : (templates.isEmpty() ? null : templates.keySet().iterator().next());
         if (templateToUse == null) {
@@ -231,7 +209,6 @@ public class ArenaManager {
         return generated;
     }
 
-    /** Ensures at least `min-spare-copies` unreserved arenas exist for a template. */
     private void maybeTopUpSpares(String templateName) {
         List<Arena> list = arenasByTemplate.getOrDefault(templateName, List.of());
         long free = list.stream().filter(Arena::isFree).count();
@@ -241,15 +218,13 @@ public class ArenaManager {
         }
     }
 
-    /** Resets an arena back to its original template state and releases it back to the pool. */
     public void resetAndRelease(Arena arena) {
         arena.setState(Arena.State.RESETTING);
         Structure structure = templates.get(arena.getTemplateName());
         if (structure != null) {
-            structure.place(origin, true, org.bukkit.block.structure.StructureRotation.NONE,
-                org.bukkit.block.structure.Mirror.NONE, 0, 1.0f, new java.util.Random());
+            structure.place(arena.getOrigin(), true, org.bukkit.block.structure.StructureRotation.NONE,
+                    org.bukkit.block.structure.Mirror.NONE, 0, 1.0f, new java.util.Random());
         }
-        // Clear entities (dropped items, arrows, etc.) left inside the arena bounding box
         arena.getWorld().getNearbyEntities(boundingBoxOf(arena)).forEach(e -> {
             if (!(e instanceof org.bukkit.entity.Player)) {
                 e.remove();
