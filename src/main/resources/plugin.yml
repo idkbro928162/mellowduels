@@ -1,0 +1,25 @@
+name: MellowDuels
+version: '${project.version}'
+main: net.mellowsmp.duels.MellowDuels
+api-version: '1.21'
+folia-supported: true
+author: MellowSMP
+description: Automatic-arena PvP dueling system with kits, queues, spectating and stats.
+
+commands:
+  duel:
+    description: Main duel command
+    usage: /duel <challenge|accept|deny|queue|leave|spectate|stats|top|gui>
+    aliases: [duels]
+  dueladmin:
+    description: Admin commands for MellowDuels
+    usage: /dueladmin <arena|kit|reload>
+    permission: mellowduels.admin
+
+permissions:
+  mellowduels.use:
+    description: Allows use of basic duel commands
+    default: true
+  mellowduels.admin:
+    description: Allows management of arenas, kits and plugin settings
+    default: op

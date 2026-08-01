@@ -1,0 +1,98 @@
+kits:
+  NoDebuff:
+    display-name: "&fNoDebuff"
+    icon: DIAMOND_SWORD
+    game-mode: SURVIVAL
+    health: 20.0
+    hunger: 20
+    effects: []
+    items:
+      0: {material: DIAMOND_SWORD, enchants: {SHARPNESS: 1}}
+      1: {material: BOW, enchants: {POWER: 1}}
+      2: {material: ARROW, amount: 64}
+      8: {material: GOLDEN_APPLE, amount: 16}
+    armor:
+      helmet: {material: DIAMOND_HELMET, enchants: {PROTECTION: 4}}
+      chestplate: {material: DIAMOND_CHESTPLATE, enchants: {PROTECTION: 4}}
+      leggings: {material: DIAMOND_LEGGINGS, enchants: {PROTECTION: 4}}
+      boots: {material: DIAMOND_BOOTS, enchants: {PROTECTION: 4}}
+
+  CrystalPvP:
+    display-name: "&dCrystal PvP"
+    icon: END_CRYSTAL
+    game-mode: SURVIVAL
+    health: 20.0
+    hunger: 20
+    items:
+      0: {material: DIAMOND_PICKAXE, enchants: {EFFICIENCY: 5}}
+      1: {material: END_CRYSTAL, amount: 64}
+      2: {material: OBSIDIAN, amount: 64}
+      3: {material: FLINT_AND_STEEL}
+      8: {material: GOLDEN_APPLE, amount: 16}
+    armor:
+      helmet: {material: DIAMOND_HELMET, enchants: {BLAST_PROTECTION: 4}}
+      chestplate: {material: DIAMOND_CHESTPLATE, enchants: {BLAST_PROTECTION: 4}}
+      leggings: {material: DIAMOND_LEGGINGS, enchants: {BLAST_PROTECTION: 4}}
+      boots: {material: DIAMOND_BOOTS, enchants: {BLAST_PROTECTION: 4}}
+
+  Sword:
+    display-name: "&7Sword"
+    icon: IRON_SWORD
+    game-mode: SURVIVAL
+    health: 20.0
+    hunger: 20
+    items:
+      0: {material: IRON_SWORD, enchants: {SHARPNESS: 2}}
+    armor:
+      helmet: {material: IRON_HELMET}
+      chestplate: {material: IRON_CHESTPLATE}
+      leggings: {material: IRON_LEGGINGS}
+      boots: {material: IRON_BOOTS}
+
+  Axe:
+    display-name: "&6Axe"
+    icon: DIAMOND_AXE
+    game-mode: SURVIVAL
+    health: 20.0
+    hunger: 20
+    items:
+      0: {material: DIAMOND_AXE, enchants: {SHARPNESS: 1}}
+      8: {material: GOLDEN_APPLE, amount: 8}
+    armor:
+      helmet: {material: DIAMOND_HELMET}
+      chestplate: {material: DIAMOND_CHESTPLATE}
+      leggings: {material: DIAMOND_LEGGINGS}
+      boots: {material: DIAMOND_BOOTS}
+
+  UHC:
+    display-name: "&cUHC"
+    icon: GOLDEN_APPLE
+    game-mode: SURVIVAL
+    health: 20.0
+    hunger: 20
+    disable-natural-regen: true
+    items:
+      0: {material: IRON_SWORD}
+      1: {material: BOW}
+      2: {material: ARROW, amount: 32}
+      8: {material: GOLDEN_APPLE, amount: 4}
+    armor:
+      helmet: {material: IRON_HELMET}
+      chestplate: {material: IRON_CHESTPLATE}
+      leggings: {material: IRON_LEGGINGS}
+      boots: {material: IRON_BOOTS}
+
+  Netherite:
+    display-name: "&8Netherite"
+    icon: NETHERITE_SWORD
+    game-mode: SURVIVAL
+    health: 20.0
+    hunger: 20
+    items:
+      0: {material: NETHERITE_SWORD, enchants: {SHARPNESS: 3}}
+      8: {material: GOLDEN_APPLE, amount: 16}
+    armor:
+      helmet: {material: NETHERITE_HELMET, enchants: {PROTECTION: 4}}
+      chestplate: {material: NETHERITE_CHESTPLATE, enchants: {PROTECTION: 4}}
+      leggings: {material: NETHERITE_LEGGINGS, enchants: {PROTECTION: 4}}
+      boots: {material: NETHERITE_BOOTS, enchants: {PROTECTION: 4}}

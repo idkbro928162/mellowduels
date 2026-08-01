@@ -1,0 +1,57 @@
+# MellowDuels configuration
+
+storage:
+  type: SQLITE   # SQLITE or MYSQL
+  mysql:
+    host: 127.0.0.1
+    port: 3306
+    database: mellowduels
+    username: root
+    password: ""
+
+arenas:
+  # World that generated arena copies are pasted into
+  world: duels_world
+  # Spacing (in blocks) between generated arena copies on the grid
+  spacing: 250
+  # How many spare (unreserved) arena copies to keep ready per template
+  min-spare-copies: 2
+
+countdown:
+  seconds: 5
+  title: "&e&lDUEL STARTING"
+  subtitle: "&f%seconds%"
+
+duel:
+  max-duration-seconds: 600          # Auto-decide a winner (most damage dealt) if exceeded, 0 = unlimited
+  disable-hunger: false
+  disable-natural-regen: false
+  forfeit-on-quit: true
+  forfeit-on-disconnect-grace-seconds: 15
+
+queue:
+  prevent-duplicate-entries: true
+  prevent-duplicate-requests: true
+  match-same-kit-only: true
+
+spectator:
+  enabled: true
+  hide-spectators-from-participants: false
+  allow-spectator-chat: true
+
+messages:
+  prefix: "&8[&bDuels&8] &r"
+  challenge-sent: "%prefix%&fYou challenged &b%target%&f to a duel using kit &b%kit%&f."
+  challenge-received: "%prefix%&b%player%&f has challenged you to a duel! Type &b/duel accept %player%&f to accept."
+  challenge-expired: "%prefix%&cYour challenge to %target% has expired."
+  duel-starting: "%prefix%&fYour duel is starting in an available arena..."
+  duel-ended-win: "%prefix%&a&lYou won! &r&fvs %opponent% (%kit%)"
+  duel-ended-loss: "%prefix%&c&lYou lost. &r&fvs %opponent% (%kit%)"
+  no-arenas-available: "%prefix%&cNo arenas are available right now, please try again shortly."
+  queue-joined: "%prefix%&fJoined the queue for kit &b%kit%&f."
+  queue-left: "%prefix%&fLeft the queue for kit &b%kit%&f."
+  already-in-queue: "%prefix%&cYou are already queued for &b%kit%&f."
+  already-in-duel: "%prefix%&cYou are already in a duel."
+  player-not-found: "%prefix%&cThat player could not be found."
+  spectating-started: "%prefix%&fNow spectating &b%player%&f's duel."
+  forfeit-quit: "%prefix%&c%player% disconnected and forfeited the duel."
