@@ -5,7 +5,7 @@ import net.mellowsmp.duels.models.Arena;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
-import org.bukkit.block.structure.Structure;
+import org.bukkit.structure.Structure;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.structure.StructureManager;
