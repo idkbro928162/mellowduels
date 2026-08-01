@@ -184,8 +184,8 @@ public class ArenaManager {
         int spacing = configManager.arenaSpacing();
         Location origin = new Location(world, slot * spacing, 100, 0);
 
-        structure.place(origin, true, org.bukkit.block.structure.Mirror.NONE,
-                org.bukkit.block.structure.StructureRotation.NONE, 0, 1.0f, new java.util.Random());
+        structure.place(origin, true, org.bukkit.block.structure.StructureRotation.NONE,
+                org.bukkit.block.structure.Mirror.NONE, 0, 1.0f, new java.util.Random());
 
         String id = UUID.randomUUID().toString();
         Arena arena = new Arena(id, templateName, world, origin, sizeX, sizeY, sizeZ);
@@ -246,8 +246,8 @@ public class ArenaManager {
         arena.setState(Arena.State.RESETTING);
         Structure structure = templates.get(arena.getTemplateName());
         if (structure != null) {
-            structure.place(arena.getOrigin(), true, org.bukkit.block.structure.Mirror.NONE,
-                    org.bukkit.block.structure.StructureRotation.NONE, 0, 1.0f, new java.util.Random());
+            structure.place(origin, true, org.bukkit.block.structure.StructureRotation.NONE,
+                org.bukkit.block.structure.Mirror.NONE, 0, 1.0f, new java.util.Random());
         }
         // Clear entities (dropped items, arrows, etc.) left inside the arena bounding box
         arena.getWorld().getNearbyEntities(boundingBoxOf(arena)).forEach(e -> {
