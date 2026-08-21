@@ -1,11 +1,11 @@
-# MellowDuels configuration
+# BasedDuels configuration
 
 storage:
   type: SQLITE   # SQLITE or MYSQL
   mysql:
     host: 127.0.0.1
     port: 3306
-    database: mellowduels
+    database: basedduels
     username: root
     password: ""
 
@@ -23,16 +23,17 @@ countdown:
   subtitle: "&f%seconds%"
 
 duel:
-  max-duration-seconds: 600          # Auto-decide a winner (most damage dealt) if exceeded, 0 = unlimited
+  # Most damage wins at timeout; exact ties are cancelled. Set to 0 for unlimited.
+  max-duration-seconds: 600
   disable-hunger: false
   disable-natural-regen: false
+  # If false, a disconnect cancels the match with no recorded result.
   forfeit-on-quit: true
+  # Reconnecting within this window resumes the exact in-match state.
   forfeit-on-disconnect-grace-seconds: 15
 
 queue:
-  prevent-duplicate-entries: true
   prevent-duplicate-requests: true
-  match-same-kit-only: true
 
 spectator:
   enabled: true
@@ -42,16 +43,32 @@ spectator:
 messages:
   prefix: "&8[&bDuels&8] &r"
   challenge-sent: "%prefix%&fYou challenged &b%target%&f to a duel using kit &b%kit%&f."
-  challenge-received: "%prefix%&b%player%&f has challenged you to a duel! Type &b/duel accept %player%&f to accept."
+  challenge-received: "%prefix%&b%player%&f challenged you using &b%kit%&f! Type &b/duel accept&f to accept."
   challenge-expired: "%prefix%&cYour challenge to %target% has expired."
+  challenge-denied: "%prefix%&c%target% denied your duel challenge."
+  no-pending-request: "%prefix%&cYou have no pending duel request."
+  request-expired: "%prefix%&cThat duel request has expired."
+  challenger-offline: "%prefix%&cThe challenger is no longer online."
+  request-unavailable: "%prefix%&cThat duel can no longer be started."
+  duplicate-request: "%prefix%&cYou or that player already has a pending challenge."
+  self-challenge: "%prefix%&cYou cannot challenge yourself."
   duel-starting: "%prefix%&fYour duel is starting in an available arena..."
   duel-ended-win: "%prefix%&a&lYou won! &r&fvs %opponent% (%kit%)"
   duel-ended-loss: "%prefix%&c&lYou lost. &r&fvs %opponent% (%kit%)"
+  duel-cancelled: "%prefix%&eThe duel was cancelled and no result was recorded."
   no-arenas-available: "%prefix%&cNo arenas are available right now, please try again shortly."
   queue-joined: "%prefix%&fJoined the queue for kit &b%kit%&f."
   queue-left: "%prefix%&fLeft the queue for kit &b%kit%&f."
-  already-in-queue: "%prefix%&cYou are already queued for &b%kit%&f."
+  already-in-queue: "%prefix%&cYou are already in a duel queue."
   already-in-duel: "%prefix%&cYou are already in a duel."
+  already-spectating: "%prefix%&cYou must stop spectating first."
+  invalid-kit: "%prefix%&cThat kit does not exist."
   player-not-found: "%prefix%&cThat player could not be found."
   spectating-started: "%prefix%&fNow spectating &b%player%&f's duel."
+  spectating-stopped: "%prefix%&fYou stopped spectating."
+  cannot-spectate: "%prefix%&cYou cannot spectate that duel right now."
+  nothing-to-leave: "%prefix%&cYou are not queued, dueling, or spectating."
+  opponent-disconnected: "%prefix%&e%player% disconnected and has %seconds% seconds to return."
+  opponent-reconnected: "%prefix%&a%player% reconnected. The duel continues."
   forfeit-quit: "%prefix%&c%player% disconnected and forfeited the duel."
+  stats-unavailable: "%prefix%&cStatistics are temporarily unavailable."

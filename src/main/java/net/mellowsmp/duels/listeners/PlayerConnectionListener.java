@@ -1,16 +1,17 @@
 package net.mellowsmp.duels.listeners;
 
-import net.mellowsmp.duels.MellowDuels;
+import net.mellowsmp.duels.BasedDuels;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 
 public class PlayerConnectionListener implements Listener {
 
-    private final MellowDuels plugin;
+    private final BasedDuels plugin;
 
-    public PlayerConnectionListener(MellowDuels plugin) {
+    public PlayerConnectionListener(BasedDuels plugin) {
         this.plugin = plugin;
     }
 
@@ -23,11 +24,22 @@ public class PlayerConnectionListener implements Listener {
         }
 
         if (plugin.getQueueManager().isQueued(player.getUniqueId())) {
-            plugin.getQueueManager().leave(player);
+            plugin.getQueueManager().removeSilently(player.getUniqueId());
         }
+        plugin.getRequestManager().removeRequestsFor(player.getUniqueId());
 
         if (plugin.getDuelManager().isInDuel(player.getUniqueId())) {
-            plugin.getDuelManager().handleDisconnect(player.getUniqueId());
+            plugin.getDuelManager().handleDisconnect(player);
+        }
+    }
+
+    @EventHandler
+    public void onJoin(PlayerJoinEvent event) {
+        Player player = event.getPlayer();
+        plugin.getDuelManager().handleReconnect(player);
+        if (!plugin.getDuelManager().isInDuel(player.getUniqueId())
+                && plugin.getPlayerStateManager().hasSavedState(player.getUniqueId())) {
+            plugin.getPlayerStateManager().restore(player);
         }
     }
 }

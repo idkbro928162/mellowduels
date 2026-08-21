@@ -24,6 +24,7 @@ public class DuelSession {
     private Phase phase = Phase.COUNTDOWN;
     private UUID winner;
     private long combatStartedAtMillis;
+    private long combatEndedAtMillis;
     private double damageDealtByA;
     private double damageDealtByB;
 
@@ -74,6 +75,8 @@ public class DuelSession {
         this.phase = phase;
         if (phase == Phase.ACTIVE) {
             this.combatStartedAtMillis = System.currentTimeMillis();
+        } else if (phase == Phase.ENDING && combatStartedAtMillis != 0 && combatEndedAtMillis == 0) {
+            this.combatEndedAtMillis = System.currentTimeMillis();
         }
     }
 
@@ -91,10 +94,14 @@ public class DuelSession {
 
     public long getCombatDurationMillis() {
         if (combatStartedAtMillis == 0) return 0;
-        return System.currentTimeMillis() - combatStartedAtMillis;
+        long end = combatEndedAtMillis == 0 ? System.currentTimeMillis() : combatEndedAtMillis;
+        return Math.max(0, end - combatStartedAtMillis);
     }
 
     public void addDamage(UUID dealer, double amount) {
+        if (!Double.isFinite(amount) || amount <= 0) {
+            return;
+        }
         if (playerA.equals(dealer)) {
             damageDealtByA += amount;
         } else if (playerB.equals(dealer)) {
@@ -104,6 +111,19 @@ public class DuelSession {
 
     /** Used for the max-duration timeout rule: whoever dealt more damage wins. */
     public UUID decideWinnerByDamage() {
-        return damageDealtByA >= damageDealtByB ? playerA : playerB;
+        if (Double.compare(damageDealtByA, damageDealtByB) == 0) {
+            return null;
+        }
+        return damageDealtByA > damageDealtByB ? playerA : playerB;
+    }
+
+    public double getDamageDealt(UUID player) {
+        if (playerA.equals(player)) {
+            return damageDealtByA;
+        }
+        if (playerB.equals(player)) {
+            return damageDealtByB;
+        }
+        return 0;
     }
 }

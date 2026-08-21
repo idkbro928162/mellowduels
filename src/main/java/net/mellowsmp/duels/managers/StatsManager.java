@@ -1,6 +1,6 @@
 package net.mellowsmp.duels.managers;
 
-import net.mellowsmp.duels.MellowDuels;
+import net.mellowsmp.duels.BasedDuels;
 
 import java.io.File;
 import java.sql.Connection;
@@ -33,16 +33,17 @@ public class StatsManager {
         }
     }
 
-    private final MellowDuels plugin;
+    private final BasedDuels plugin;
     private final ConfigManager configManager;
     private Connection connection;
+    private boolean available;
 
-    public StatsManager(MellowDuels plugin, ConfigManager configManager) {
+    public StatsManager(BasedDuels plugin, ConfigManager configManager) {
         this.plugin = plugin;
         this.configManager = configManager;
     }
 
-    public void init() {
+    public boolean init() {
         try {
             if ("MYSQL".equalsIgnoreCase(configManager.storageType())) {
                 String host = configManager.raw().getString("storage.mysql.host");
@@ -50,15 +51,29 @@ public class StatsManager {
                 String db = configManager.raw().getString("storage.mysql.database");
                 String user = configManager.raw().getString("storage.mysql.username");
                 String pass = configManager.raw().getString("storage.mysql.password");
-                String url = "jdbc:mysql://" + host + ":" + port + "/" + db;
+                String url = "jdbc:mysql://" + host + ":" + port + "/" + db
+                        + "?useUnicode=true&characterEncoding=UTF-8&serverTimezone=UTC";
                 connection = DriverManager.getConnection(url, user, pass);
             } else {
+                if (!"SQLITE".equals(configManager.storageType())) {
+                    throw new SQLException("Unsupported storage.type: " + configManager.storageType());
+                }
+                if (!plugin.getDataFolder().exists() && !plugin.getDataFolder().mkdirs()) {
+                    throw new SQLException("Could not create plugin data folder");
+                }
                 File dbFile = new File(plugin.getDataFolder(), "stats.db");
                 connection = DriverManager.getConnection("jdbc:sqlite:" + dbFile.getAbsolutePath());
+                try (PreparedStatement ps = connection.prepareStatement("PRAGMA busy_timeout = 5000")) {
+                    ps.execute();
+                }
             }
             createTables();
+            available = true;
+            return true;
         } catch (SQLException e) {
             plugin.getLogger().severe("Failed to connect to statistics database: " + e.getMessage());
+            close();
+            return false;
         }
     }
 
@@ -74,49 +89,94 @@ public class StatsManager {
     }
 
     /** Records the result of a finished duel for both players, split per-kit and combined ("__all__"). */
-    public void recordResult(UUID winner, UUID loser, String kit, long durationMillis) {
+    public synchronized void recordResult(UUID winner, UUID loser, String kit, long durationMillis) {
+        if (!isAvailable()) {
+            return;
+        }
+        boolean originalAutoCommit = true;
         try {
+            originalAutoCommit = connection.getAutoCommit();
+            connection.setAutoCommit(false);
             upsertResult(winner, kit, true, durationMillis);
             upsertResult(winner, "__all__", true, durationMillis);
             upsertResult(loser, kit, false, durationMillis);
             upsertResult(loser, "__all__", false, durationMillis);
+            connection.commit();
         } catch (SQLException e) {
+            try {
+                connection.rollback();
+            } catch (SQLException rollbackError) {
+                e.addSuppressed(rollbackError);
+            }
             plugin.getLogger().warning("Failed to record duel result: " + e.getMessage());
+        } finally {
+            try {
+                connection.setAutoCommit(originalAutoCommit);
+            } catch (SQLException e) {
+                plugin.getLogger().warning("Failed to restore database transaction state: " + e.getMessage());
+            }
         }
     }
 
     private void upsertResult(UUID uuid, String kit, boolean won, long durationMillis) throws SQLException {
-        PlayerStats existing = getStats(uuid, kit);
+        PlayerStats existing = queryStats(uuid, kit);
         int wins = existing.wins + (won ? 1 : 0);
         int losses = existing.losses + (won ? 0 : 1);
+        int kills = existing.kills + (won ? 1 : 0);
+        int deaths = existing.deaths + (won ? 0 : 1);
         int matches = existing.matches + 1;
         int currentStreak = won ? existing.currentStreak + 1 : 0;
         int bestStreak = Math.max(existing.bestStreak, currentStreak);
-        long totalDuration = existing.totalDurationMillis + durationMillis;
+        long totalDuration = existing.totalDurationMillis + Math.max(0, durationMillis);
 
         try (PreparedStatement ps = connection.prepareStatement(
-                "INSERT INTO player_stats (uuid, kit, wins, losses, matches, current_streak, best_streak, total_duration_ms) " +
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?) " +
-                        "ON CONFLICT(uuid, kit) DO UPDATE SET wins=?, losses=?, matches=?, current_streak=?, best_streak=?, total_duration_ms=?")) {
-            ps.setString(1, uuid.toString());
-            ps.setString(2, kit);
-            ps.setInt(3, wins);
-            ps.setInt(4, losses);
+                "UPDATE player_stats SET wins=?, losses=?, kills=?, deaths=?, matches=?, current_streak=?, " +
+                        "best_streak=?, total_duration_ms=? WHERE uuid=? AND kit=?")) {
+            ps.setInt(1, wins);
+            ps.setInt(2, losses);
+            ps.setInt(3, kills);
+            ps.setInt(4, deaths);
             ps.setInt(5, matches);
             ps.setInt(6, currentStreak);
             ps.setInt(7, bestStreak);
             ps.setLong(8, totalDuration);
-            ps.setInt(9, wins);
-            ps.setInt(10, losses);
-            ps.setInt(11, matches);
-            ps.setInt(12, currentStreak);
-            ps.setInt(13, bestStreak);
-            ps.setLong(14, totalDuration);
+            ps.setString(9, uuid.toString());
+            ps.setString(10, kit);
+            if (ps.executeUpdate() > 0) {
+                return;
+            }
+        }
+
+        try (PreparedStatement ps = connection.prepareStatement(
+                "INSERT INTO player_stats (uuid, kit, wins, losses, kills, deaths, matches, current_streak, " +
+                        "best_streak, total_duration_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+            ps.setString(1, uuid.toString());
+            ps.setString(2, kit);
+            ps.setInt(3, wins);
+            ps.setInt(4, losses);
+            ps.setInt(5, kills);
+            ps.setInt(6, deaths);
+            ps.setInt(7, matches);
+            ps.setInt(8, currentStreak);
+            ps.setInt(9, bestStreak);
+            ps.setLong(10, totalDuration);
             ps.executeUpdate();
         }
     }
 
-    public PlayerStats getStats(UUID uuid, String kit) {
+    public synchronized PlayerStats getStats(UUID uuid, String kit) {
+        if (!isAvailable()) {
+            return new PlayerStats();
+        }
+        try {
+            return queryStats(uuid, kit);
+        } catch (SQLException e) {
+            plugin.getLogger().warning("Failed to load stats: " + e.getMessage());
+            return new PlayerStats();
+        }
+    }
+
+    private PlayerStats queryStats(UUID uuid, String kit) throws SQLException {
         PlayerStats stats = new PlayerStats();
         try (PreparedStatement ps = connection.prepareStatement(
                 "SELECT * FROM player_stats WHERE uuid = ? AND kit = ?")) {
@@ -126,25 +186,28 @@ public class StatsManager {
                 if (rs.next()) {
                     stats.wins = rs.getInt("wins");
                     stats.losses = rs.getInt("losses");
+                    stats.kills = rs.getInt("kills");
+                    stats.deaths = rs.getInt("deaths");
                     stats.matches = rs.getInt("matches");
                     stats.currentStreak = rs.getInt("current_streak");
                     stats.bestStreak = rs.getInt("best_streak");
                     stats.totalDurationMillis = rs.getLong("total_duration_ms");
                 }
             }
-        } catch (SQLException e) {
-            plugin.getLogger().warning("Failed to load stats: " + e.getMessage());
         }
         return stats;
     }
 
     /** Basic leaderboard query: top players by wins for a given kit ("__all__" for overall). */
-    public List<Object[]> topByWins(String kit, int limit) {
+    public synchronized List<Object[]> topByWins(String kit, int limit) {
         List<Object[]> results = new ArrayList<>();
+        if (!isAvailable()) {
+            return results;
+        }
         try (PreparedStatement ps = connection.prepareStatement(
-                "SELECT uuid, wins FROM player_stats WHERE kit = ? ORDER BY wins DESC LIMIT ?")) {
+                "SELECT uuid, wins FROM player_stats WHERE kit = ? ORDER BY wins DESC, uuid ASC LIMIT ?")) {
             ps.setString(1, kit);
-            ps.setInt(2, limit);
+            ps.setInt(2, Math.max(1, Math.min(limit, 100)));
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     results.add(new Object[]{rs.getString("uuid"), rs.getInt("wins")});
@@ -156,10 +219,24 @@ public class StatsManager {
         return results;
     }
 
-    public void close() {
+    public synchronized boolean isAvailable() {
+        if (!available || connection == null) {
+            return false;
+        }
+        try {
+            return !connection.isClosed();
+        } catch (SQLException e) {
+            return false;
+        }
+    }
+
+    public synchronized void close() {
+        available = false;
         try {
             if (connection != null) connection.close();
         } catch (SQLException ignored) {
+        } finally {
+            connection = null;
         }
     }
 }

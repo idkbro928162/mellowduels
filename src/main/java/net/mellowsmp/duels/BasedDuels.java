@@ -3,6 +3,7 @@ package net.mellowsmp.duels;
 import net.mellowsmp.duels.commands.DuelAdminCommand;
 import net.mellowsmp.duels.commands.DuelCommand;
 import net.mellowsmp.duels.listeners.DuelCombatListener;
+import net.mellowsmp.duels.listeners.KitSelectListener;
 import net.mellowsmp.duels.listeners.PlayerConnectionListener;
 import net.mellowsmp.duels.managers.ArenaManager;
 import net.mellowsmp.duels.managers.ConfigManager;
@@ -15,15 +16,14 @@ import net.mellowsmp.duels.managers.SpectatorManager;
 import net.mellowsmp.duels.managers.StatsManager;
 import org.bukkit.plugin.java.JavaPlugin;
 
-/**
- * MellowDuels - an automatic-arena PvP dueling system.
- *
- * This is an original implementation built for MellowSMP. It is not based on,
- * and does not reuse any code from, any other dueling plugin.
- */
-public final class MellowDuels extends JavaPlugin {
+import java.util.Objects;
 
-    private static MellowDuels instance;
+/**
+ * BasedDuels - an automatic-arena PvP dueling system.
+ */
+public final class BasedDuels extends JavaPlugin {
+
+    private static BasedDuels instance;
 
     private ConfigManager configManager;
     private ArenaManager arenaManager;
@@ -40,7 +40,7 @@ public final class MellowDuels extends JavaPlugin {
         instance = this;
 
         saveDefaultConfig();
-        saveResource_ifMissing("kits.yml");
+        saveResourceIfMissing("kits.yml");
 
         this.configManager = new ConfigManager(this);
         this.playerStateManager = new PlayerStateManager();
@@ -53,17 +53,28 @@ public final class MellowDuels extends JavaPlugin {
         this.queueManager = new QueueManager(this, duelManager, kitManager, configManager);
         this.requestManager = new RequestManager(this, duelManager, kitManager, configManager);
 
-        getCommand("duel").setExecutor(new DuelCommand(this));
-        getCommand("dueladmin").setExecutor(new DuelAdminCommand(this));
+        DuelCommand duelCommand = new DuelCommand(this);
+        var duelPluginCommand = Objects.requireNonNull(getCommand("duel"), "duel command missing from plugin.yml");
+        duelPluginCommand.setExecutor(duelCommand);
+        duelPluginCommand.setTabCompleter(duelCommand);
+
+        DuelAdminCommand adminCommand = new DuelAdminCommand(this);
+        var adminPluginCommand = Objects.requireNonNull(getCommand("dueladmin"),
+                "dueladmin command missing from plugin.yml");
+        adminPluginCommand.setExecutor(adminCommand);
+        adminPluginCommand.setTabCompleter(adminCommand);
 
         getServer().getPluginManager().registerEvents(new DuelCombatListener(this), this);
         getServer().getPluginManager().registerEvents(new PlayerConnectionListener(this), this);
+        getServer().getPluginManager().registerEvents(new KitSelectListener(this), this);
 
         arenaManager.loadArenas();
         kitManager.loadKits();
-        statsManager.init();
+        if (!statsManager.init()) {
+            getLogger().warning("Statistics are disabled until the database configuration is fixed.");
+        }
 
-        getLogger().info("MellowDuels enabled. " + arenaManager.getArenaCount() + " arena(s) loaded, "
+        getLogger().info("BasedDuels enabled. " + arenaManager.getArenaCount() + " arena(s) loaded, "
                 + kitManager.getKitNames().size() + " kit(s) loaded.");
     }
 
@@ -75,16 +86,18 @@ public final class MellowDuels extends JavaPlugin {
         if (statsManager != null) {
             statsManager.close();
         }
+        instance = null;
+        getLogger().info("BasedDuels disabled.");
     }
 
-    private void saveResource_ifMissing(String name) {
+    private void saveResourceIfMissing(String name) {
         java.io.File f = new java.io.File(getDataFolder(), name);
         if (!f.exists()) {
             saveResource(name, false);
         }
     }
 
-    public static MellowDuels getInstance() {
+    public static BasedDuels getInstance() {
         return instance;
     }
 

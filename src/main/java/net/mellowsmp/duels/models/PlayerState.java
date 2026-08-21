@@ -33,11 +33,26 @@ public class PlayerState {
     private final List<PotionEffect> potionEffects;
     private final boolean allowFlight;
     private final boolean flying;
+    private final float walkSpeed;
+    private final float flySpeed;
+    private final float exhaustion;
+    private final float fallDistance;
+    private final int fireTicks;
+    private final int freezeTicks;
+    private final int remainingAir;
+    private final int noDamageTicks;
+    private final int heldItemSlot;
+    private final double absorptionAmount;
+    private final boolean invulnerable;
+    private final boolean collidable;
 
     private PlayerState(ItemStack[] inventoryContents, ItemStack[] armorContents, ItemStack offHand,
                           double health, double maxHealth, int foodLevel, float saturation,
                           int totalExperience, int level, float exp, GameMode gameMode, Location location,
-                          List<PotionEffect> potionEffects, boolean allowFlight, boolean flying) {
+                          List<PotionEffect> potionEffects, boolean allowFlight, boolean flying,
+                          float walkSpeed, float flySpeed, float exhaustion, float fallDistance,
+                          int fireTicks, int freezeTicks, int remainingAir, int noDamageTicks,
+                          int heldItemSlot, double absorptionAmount, boolean invulnerable, boolean collidable) {
         this.inventoryContents = inventoryContents;
         this.armorContents = armorContents;
         this.offHand = offHand;
@@ -53,6 +68,18 @@ public class PlayerState {
         this.potionEffects = potionEffects;
         this.allowFlight = allowFlight;
         this.flying = flying;
+        this.walkSpeed = walkSpeed;
+        this.flySpeed = flySpeed;
+        this.exhaustion = exhaustion;
+        this.fallDistance = fallDistance;
+        this.fireTicks = fireTicks;
+        this.freezeTicks = freezeTicks;
+        this.remainingAir = remainingAir;
+        this.noDamageTicks = noDamageTicks;
+        this.heldItemSlot = heldItemSlot;
+        this.absorptionAmount = absorptionAmount;
+        this.invulnerable = invulnerable;
+        this.collidable = collidable;
     }
 
     public static PlayerState capture(Player player) {
@@ -75,7 +102,19 @@ public class PlayerState {
                 player.getLocation().clone(),
                 new ArrayList<>(player.getActivePotionEffects()),
                 player.getAllowFlight(),
-                player.isFlying()
+                player.isFlying(),
+                player.getWalkSpeed(),
+                player.getFlySpeed(),
+                player.getExhaustion(),
+                player.getFallDistance(),
+                player.getFireTicks(),
+                player.getFreezeTicks(),
+                player.getRemainingAir(),
+                player.getNoDamageTicks(),
+                inv.getHeldItemSlot(),
+                player.getAbsorptionAmount(),
+                player.isInvulnerable(),
+                player.isCollidable()
         );
     }
 
@@ -86,6 +125,7 @@ public class PlayerState {
         inv.setContents(cloneArray(inventoryContents));
         inv.setArmorContents(cloneArray(armorContents));
         inv.setItemInOffHand(offHand != null ? offHand.clone() : null);
+        inv.setHeldItemSlot(heldItemSlot);
 
         for (PotionEffect effect : player.getActivePotionEffects().toArray(new PotionEffect[0])) {
             player.removePotionEffect(effect.getType());
@@ -97,16 +137,30 @@ public class PlayerState {
         if (player.getAttribute(Attribute.MAX_HEALTH) != null) {
             player.getAttribute(Attribute.MAX_HEALTH).setBaseValue(maxHealth);
         }
-        player.setHealth(Math.min(health, maxHealth));
+        double restoredMaximum = player.getAttribute(Attribute.MAX_HEALTH) == null
+                ? maxHealth : player.getAttribute(Attribute.MAX_HEALTH).getValue();
+        player.setHealth(Math.max(0.01, Math.min(health, restoredMaximum)));
         player.setFoodLevel(foodLevel);
         player.setSaturation(saturation);
+        player.setExhaustion(exhaustion);
         player.setTotalExperience(totalExperience);
         player.setLevel(level);
         player.setExp(exp);
         player.setGameMode(gameMode);
         player.setAllowFlight(allowFlight);
-        player.setFlying(flying);
+        player.setFlying(flying && allowFlight);
+        player.setWalkSpeed(walkSpeed);
+        player.setFlySpeed(flySpeed);
+        player.setFallDistance(fallDistance);
+        player.setFireTicks(fireTicks);
+        player.setFreezeTicks(freezeTicks);
+        player.setRemainingAir(remainingAir);
+        player.setNoDamageTicks(noDamageTicks);
+        player.setAbsorptionAmount(absorptionAmount);
+        player.setInvulnerable(invulnerable);
+        player.setCollidable(collidable);
         player.teleport(location);
+        player.updateInventory();
     }
 
     private static ItemStack[] cloneArray(ItemStack[] source) {

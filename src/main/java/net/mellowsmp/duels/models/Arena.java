@@ -27,6 +27,7 @@ public class Arena {
     private Location spectatorSpawn;
     private volatile State state = State.AVAILABLE;
     private String currentSessionId;
+    private int gridSlot = -1;
 
     public Arena(String id, String templateName, World world, Location origin, int sizeX, int sizeY, int sizeZ) {
         this.id = id;
@@ -110,6 +111,14 @@ public class Arena {
         return state == State.AVAILABLE;
     }
 
+    public int getGridSlot() {
+        return gridSlot;
+    }
+
+    public void setGridSlot(int gridSlot) {
+        this.gridSlot = gridSlot;
+    }
+
     /** Returns true if the given location falls inside this arena's bounding box. */
     public boolean contains(Location loc) {
         if (loc.getWorld() == null || !loc.getWorld().equals(world)) {
@@ -118,6 +127,6 @@ public class Arena {
         double x = loc.getX() - origin.getX();
         double y = loc.getY() - origin.getY();
         double z = loc.getZ() - origin.getZ();
-        return x >= 0 && x <= sizeX && y >= 0 && y <= sizeY && z >= 0 && z <= sizeZ;
+        return x >= 0 && x < sizeX && y >= 0 && y < sizeY && z >= 0 && z < sizeZ;
     }
 }

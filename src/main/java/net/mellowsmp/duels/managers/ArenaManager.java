@@ -1,10 +1,12 @@
 package net.mellowsmp.duels.managers;
 
-import net.mellowsmp.duels.MellowDuels;
+import net.mellowsmp.duels.BasedDuels;
 import net.mellowsmp.duels.models.Arena;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
+import org.bukkit.WorldCreator;
+import org.bukkit.WorldType;
 import org.bukkit.structure.Structure;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
@@ -22,21 +24,23 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class ArenaManager {
 
-    private final MellowDuels plugin;
+    private final BasedDuels plugin;
     private final ConfigManager configManager;
     private final Map<String, Structure> templates = new LinkedHashMap<>();
     private final Map<String, List<Arena>> arenasByTemplate = new LinkedHashMap<>();
     private final Map<String, Arena> arenasById = new LinkedHashMap<>();
     private final AtomicInteger nextGridSlot = new AtomicInteger(0);
 
-    public ArenaManager(MellowDuels plugin, ConfigManager configManager) {
+    public ArenaManager(BasedDuels plugin, ConfigManager configManager) {
         this.plugin = plugin;
         this.configManager = configManager;
     }
 
     private File templatesFolder() {
         File dir = new File(plugin.getDataFolder(), "arena-templates");
-        if (!dir.exists()) dir.mkdirs();
+        if (!dir.exists() && !dir.mkdirs()) {
+            plugin.getLogger().severe("Could not create arena template directory: " + dir);
+        }
         return dir;
     }
 
@@ -45,11 +49,17 @@ public class ArenaManager {
     }
 
     public void loadArenas() {
+        templates.clear();
+        arenasByTemplate.clear();
+        arenasById.clear();
+        nextGridSlot.set(0);
+        ensureArenaWorld();
+
         StructureManager sm = Bukkit.getStructureManager();
         File[] files = templatesFolder().listFiles((d, name) -> name.endsWith(".nbt"));
         if (files != null) {
             for (File f : files) {
-                String name = f.getName().replace(".nbt", "");
+                String name = f.getName().substring(0, f.getName().length() - 4);
                 try {
                     Structure structure = sm.loadStructure(f);
                     templates.put(name, structure);
@@ -66,10 +76,19 @@ public class ArenaManager {
             if (section != null) {
                 for (String id : section.getKeys(false)) {
                     ConfigurationSection s = section.getConfigurationSection(id);
+                    if (s == null) continue;
                     String templateName = s.getString("template");
                     String worldName = s.getString("world");
+                    if (templateName == null || worldName == null || !templates.containsKey(templateName)) {
+                        plugin.getLogger().warning("Skipping arena '" + id + "' with a missing template or world.");
+                        continue;
+                    }
                     World world = Bukkit.getWorld(worldName);
-                    if (world == null) continue;
+                    if (world == null) {
+                        plugin.getLogger().warning("Skipping arena '" + id + "' because world '" + worldName
+                                + "' is not loaded.");
+                        continue;
+                    }
                     Location origin = new Location(world, s.getDouble("origin.x"), s.getDouble("origin.y"), s.getDouble("origin.z"));
                     int sx = s.getInt("size.x");
                     int sy = s.getInt("size.y");
@@ -78,12 +97,34 @@ public class ArenaManager {
                     arena.setSpawnA(loadLoc(s, "spawnA", world));
                     arena.setSpawnB(loadLoc(s, "spawnB", world));
                     arena.setSpectatorSpawn(loadLoc(s, "spectatorSpawn", world));
+                    if (arena.getSpawnA() == null || arena.getSpawnB() == null) {
+                        plugin.getLogger().warning("Skipping arena '" + id + "' because participant spawns are missing.");
+                        continue;
+                    }
+                    int slot = s.getInt("gridSlot", inferGridSlot(origin));
+                    arena.setGridSlot(slot);
                     registerArena(arena);
-                    int slot = s.getInt("gridSlot", 0);
                     if (slot >= nextGridSlot.get()) nextGridSlot.set(slot + 1);
                 }
             }
         }
+    }
+
+    private void ensureArenaWorld() {
+        if (Bukkit.getWorld(configManager.arenaWorldName()) != null) {
+            return;
+        }
+        World world = new WorldCreator(configManager.arenaWorldName())
+                .type(WorldType.FLAT)
+                .generateStructures(false)
+                .createWorld();
+        if (world == null) {
+            plugin.getLogger().severe("Could not create arena world '" + configManager.arenaWorldName() + "'.");
+        }
+    }
+
+    private int inferGridSlot(Location origin) {
+        return Math.max(0, (int) Math.round(origin.getX() / configManager.arenaSpacing()));
     }
 
     private Location loadLoc(ConfigurationSection s, String key, World world) {
@@ -99,6 +140,10 @@ public class ArenaManager {
 
     public boolean captureTemplate(String name, Location corner1, Location corner2,
                                      BlockVector relativeSpawnA, BlockVector relativeSpawnB) {
+        if (!name.matches("[A-Za-z0-9_-]{1,48}") || corner1.getWorld() == null
+                || !corner1.getWorld().equals(corner2.getWorld())) {
+            return false;
+        }
         World world = corner1.getWorld();
         StructureManager sm = Bukkit.getStructureManager();
         Structure structure = sm.createStructure();
@@ -122,7 +167,6 @@ public class ArenaManager {
             sm.saveStructure(out, structure);
             templates.put(name, structure);
 
-            File index = new File(plugin.getDataFolder(), "arena-templates/" + name + ".meta.yml");
             YamlConfiguration meta = new YamlConfiguration();
             meta.set("size.x", sizeX);
             meta.set("size.y", sizeY);
@@ -155,13 +199,28 @@ public class ArenaManager {
         }
 
         File metaFile = new File(templatesFolder(), templateName + ".meta.yml");
+        if (!metaFile.isFile()) {
+            plugin.getLogger().warning("Template '" + templateName + "' has no metadata file.");
+            return null;
+        }
         YamlConfiguration meta = YamlConfiguration.loadConfiguration(metaFile);
         int sizeX = meta.getInt("size.x", structure.getSize().getBlockX());
         int sizeY = meta.getInt("size.y", structure.getSize().getBlockY());
         int sizeZ = meta.getInt("size.z", structure.getSize().getBlockZ());
+        if (sizeX < 1 || sizeY < 1 || sizeZ < 1
+                || !meta.contains("spawnA.x") || !meta.contains("spawnB.x")) {
+            plugin.getLogger().warning("Template '" + templateName + "' has invalid metadata.");
+            return null;
+        }
 
         int slot = nextGridSlot.getAndIncrement();
         int spacing = configManager.arenaSpacing();
+        if (sizeX >= spacing || sizeZ >= spacing) {
+            plugin.getLogger().warning("Template '" + templateName + "' is too large for arenas.spacing="
+                    + spacing + ". Increase the configured spacing.");
+            nextGridSlot.decrementAndGet();
+            return null;
+        }
         Location origin = new Location(world, slot * spacing, 100, 0);
 
         structure.place(origin, true, org.bukkit.block.structure.StructureRotation.NONE,
@@ -169,6 +228,7 @@ public class ArenaManager {
 
         String id = UUID.randomUUID().toString();
         Arena arena = new Arena(id, templateName, world, origin, sizeX, sizeY, sizeZ);
+        arena.setGridSlot(slot);
 
         BlockVector relA = new BlockVector(meta.getInt("spawnA.x"), meta.getInt("spawnA.y"), meta.getInt("spawnA.z"));
         BlockVector relB = new BlockVector(meta.getInt("spawnB.x"), meta.getInt("spawnB.y"), meta.getInt("spawnB.z"));
@@ -252,6 +312,7 @@ public class ArenaManager {
             yaml.set(path + ".size.x", arena.getSizeX());
             yaml.set(path + ".size.y", arena.getSizeY());
             yaml.set(path + ".size.z", arena.getSizeZ());
+            yaml.set(path + ".gridSlot", arena.getGridSlot());
             if (arena.getSpawnA() != null) setLoc(yaml, path + ".spawnA", arena.getSpawnA());
             if (arena.getSpawnB() != null) setLoc(yaml, path + ".spawnB", arena.getSpawnB());
             if (arena.getSpectatorSpawn() != null) setLoc(yaml, path + ".spectatorSpawn", arena.getSpectatorSpawn());
@@ -277,6 +338,15 @@ public class ArenaManager {
 
     public Arena getById(String id) {
         return arenasById.get(id);
+    }
+
+    public Arena getArenaAt(Location location) {
+        for (Arena arena : arenasById.values()) {
+            if (arena.contains(location)) {
+                return arena;
+            }
+        }
+        return null;
     }
 
     public List<String> getTemplateNames() {

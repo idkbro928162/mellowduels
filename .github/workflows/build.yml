@@ -1,8 +1,9 @@
-name: Build MellowDuels
+name: Build BasedDuels
 
 on:
   push:
     branches: [ main, master ]
+  pull_request:
   workflow_dispatch: {}
 
 jobs:
@@ -24,5 +25,5 @@ jobs:
       - name: Upload built jar
         uses: actions/upload-artifact@v4
         with:
-          name: MellowDuels-jar
-          path: target/MellowDuels-*.jar
+          name: BasedDuels
+          path: target/BasedDuels.jar
