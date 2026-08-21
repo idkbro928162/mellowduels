@@ -1,8 +1,0 @@
-com/based/itemesp/BasedItemEsp.class
-com/based/itemesp/managers/VisibilityManager.class
-com/based/itemesp/listeners/ItemPacketListener$1.class
-com/based/itemesp/listeners/ItemPacketListener.class
-com/based/itemesp/data/PlayerData.class
-com/based/itemesp/managers/ConfigManager.class
-com/based/itemesp/listeners/QuitListener.class
-com/based/itemesp/data/PlayerData$CacheEntry.class
