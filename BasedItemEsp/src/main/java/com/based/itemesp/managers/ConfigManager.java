@@ -1,0 +1,102 @@
+package com.based.itemesp.managers;
+
+import com.based.itemesp.BasedItemEsp;
+import org.bukkit.ChatColor;
+import org.bukkit.configuration.file.FileConfiguration;
+
+/**
+ * Loads and exposes config.yml values. All user-facing strings go through
+ * {@link #colorize(String)} / {@link ChatColor#translateAlternateColorCodes(char, String)}.
+ */
+public final class ConfigManager {
+
+    private final BasedItemEsp plugin;
+
+    private boolean enabled;
+    private double maxDistance;
+    private int recheckTicks;
+    private boolean hideCompletely;
+    private boolean debug;
+
+    private String prefix;
+    private String msgEnabled;
+    private String msgDisabled;
+    private String msgNoProtocolLib;
+
+    public ConfigManager(BasedItemEsp plugin) {
+        this.plugin = plugin;
+    }
+
+    public void reload() {
+        plugin.reloadConfig();
+        FileConfiguration config = plugin.getConfig();
+
+        enabled = config.getBoolean("settings.enabled", true);
+        maxDistance = config.getDouble("settings.max-distance", 32.0D);
+        recheckTicks = Math.max(1, config.getInt("settings.recheck-ticks", 10));
+        hideCompletely = config.getBoolean("settings.hide-completely", true);
+        debug = config.getBoolean("settings.debug", false);
+
+        prefix = config.getString("messages.prefix", "&8[&6BasedItemEsp&8]&r ");
+        msgEnabled = config.getString("messages.enabled", "&aAnti Item-ESP is enabled.");
+        msgDisabled = config.getString("messages.disabled", "&cAnti Item-ESP is disabled.");
+        msgNoProtocolLib = config.getString("messages.no-protocollib",
+                "&cProtocolLib is required. Plugin disabled.");
+    }
+
+    public String colorize(String input) {
+        if (input == null) {
+            return "";
+        }
+        return ChatColor.translateAlternateColorCodes('&', input);
+    }
+
+    public String getPrefix() {
+        return colorize(prefix);
+    }
+
+    public String getMessage(String key) {
+        return switch (key) {
+            case "enabled" -> getPrefix() + colorize(msgEnabled);
+            case "disabled" -> getPrefix() + colorize(msgDisabled);
+            case "no-protocollib" -> getPrefix() + colorize(msgNoProtocolLib);
+            default -> getPrefix() + colorize(key);
+        };
+    }
+
+    /** Raw (uncolored) message body for logging without double-prefix issues. */
+    public String getRawMessage(String key) {
+        return switch (key) {
+            case "enabled" -> msgEnabled;
+            case "disabled" -> msgDisabled;
+            case "no-protocollib" -> msgNoProtocolLib;
+            default -> key;
+        };
+    }
+
+    public boolean isEnabled() {
+        return enabled;
+    }
+
+    public double getMaxDistance() {
+        return maxDistance;
+    }
+
+    public int getRecheckTicks() {
+        return recheckTicks;
+    }
+
+    public boolean isHideCompletely() {
+        return hideCompletely;
+    }
+
+    public boolean isDebug() {
+        return debug;
+    }
+
+    public void debug(String message) {
+        if (debug) {
+            plugin.getLogger().info("[Debug] " + message);
+        }
+    }
+}

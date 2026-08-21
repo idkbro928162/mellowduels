@@ -1,0 +1,16 @@
+settings:
+  enabled: true
+  # Maximum distance (blocks) at which items can be revealed
+  max-distance: 32.0
+  # How often visibility is rechecked per player-item pair (in ticks)
+  recheck-ticks: 10
+  # If true, items without LOS are fully hidden from the client
+  hide-completely: true
+  # Extra console logging
+  debug: false
+
+messages:
+  prefix: '&8[&6BasedItemEsp&8]&r '
+  enabled: '&aAnti Item-ESP is enabled.'
+  disabled: '&cAnti Item-ESP is disabled.'
+  no-protocollib: '&cProtocolLib is required. Plugin disabled.'
