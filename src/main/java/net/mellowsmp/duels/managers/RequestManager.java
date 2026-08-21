@@ -36,8 +36,19 @@ public class RequestManager {
     }
 
     public String challenge(Player challenger, Player target, String kitId) {
+        if (challenger.getUniqueId().equals(target.getUniqueId())) {
+            return "self";
+        }
         if (duelManager.isInDuel(challenger.getUniqueId()) || duelManager.isInDuel(target.getUniqueId())) {
             return "already-in-duel";
+        }
+        if (plugin.getSpectatorManager().isSpectating(challenger.getUniqueId())
+                || plugin.getSpectatorManager().isSpectating(target.getUniqueId())) {
+            return "spectating";
+        }
+        if (plugin.getQueueManager().isQueued(challenger.getUniqueId())
+                || plugin.getQueueManager().isQueued(target.getUniqueId())) {
+            return "in-queue";
         }
         if (incomingRequests.containsKey(target.getUniqueId())) {
             return "duplicate-request";
@@ -47,26 +58,30 @@ public class RequestManager {
             return "invalid-kit";
         }
 
-        incomingRequests.put(target.getUniqueId(), new PendingRequest(challenger.getUniqueId(), kitId, System.currentTimeMillis()));
+        incomingRequests.put(target.getUniqueId(),
+                new PendingRequest(challenger.getUniqueId(), kitId, System.currentTimeMillis()));
 
         challenger.sendMessage(configManager.message("challenge-sent")
                 .replace("%target%", target.getName()).replace("%kit%", kit.getDisplayName()));
-        target.sendMessage(configManager.message("challenge-received").replace("%player%", challenger.getName()));
+        target.sendMessage(configManager.message("challenge-received")
+                .replace("%player%", challenger.getName())
+                .replace("%kit%", kit.getDisplayName()));
 
-        // auto-expire after timeout
-        new org.bukkit.scheduler.BukkitRunnable() {
-            @Override
-            public void run() {
-                PendingRequest req = incomingRequests.get(target.getUniqueId());
-                if (req != null && req.challenger().equals(challenger.getUniqueId())) {
-                    incomingRequests.remove(target.getUniqueId());
-                    Player c = Bukkit.getPlayer(challenger.getUniqueId());
-                    if (c != null) {
-                        c.sendMessage(configManager.message("challenge-expired").replace("%target%", target.getName()));
-                    }
+        final UUID targetId = target.getUniqueId();
+        final UUID challengerId = challenger.getUniqueId();
+        final String targetName = target.getName();
+
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            PendingRequest req = incomingRequests.get(targetId);
+            if (req != null && req.challenger().equals(challengerId)
+                    && System.currentTimeMillis() - req.sentAtMillis() >= REQUEST_TIMEOUT_MILLIS - 50) {
+                incomingRequests.remove(targetId, req);
+                Player c = Bukkit.getPlayer(challengerId);
+                if (c != null) {
+                    c.sendMessage(configManager.message("challenge-expired").replace("%target%", targetName));
                 }
             }
-        }.runTaskLater(plugin, REQUEST_TIMEOUT_MILLIS / 50);
+        }, REQUEST_TIMEOUT_MILLIS / 50);
 
         return "sent";
     }
@@ -78,14 +93,29 @@ public class RequestManager {
 
         Player challenger = Bukkit.getPlayer(req.challenger());
         if (challenger == null) return false;
+        if (duelManager.isInDuel(challenger.getUniqueId()) || duelManager.isInDuel(target.getUniqueId())) {
+            return false;
+        }
 
         Kit kit = kitManager.getKit(req.kitId());
-        duelManager.startDuel(challenger, target, kit, null);
-        return true;
+        if (kit == null) return false;
+
+        return duelManager.startDuel(challenger, target, kit, null);
     }
 
     public boolean deny(Player target) {
-        return incomingRequests.remove(target.getUniqueId()) != null;
+        PendingRequest req = incomingRequests.remove(target.getUniqueId());
+        if (req == null) return false;
+        Player challenger = Bukkit.getPlayer(req.challenger());
+        if (challenger != null) {
+            challenger.sendMessage(configManager.message("challenge-denied").replace("%player%", target.getName()));
+        }
+        return true;
+    }
+
+    public void clearFor(UUID uuid) {
+        incomingRequests.remove(uuid);
+        incomingRequests.entrySet().removeIf(e -> e.getValue().challenger().equals(uuid));
     }
 
     public boolean hasIncomingRequest(UUID uuid) {

@@ -4,12 +4,23 @@ import net.mellowsmp.duels.MellowDuels;
 import net.mellowsmp.duels.gui.KitSelectGui;
 import net.mellowsmp.duels.managers.StatsManager;
 import org.bukkit.Bukkit;
+import org.bukkit.OfflinePlayer;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
+import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.Player;
 
-public class DuelCommand implements CommandExecutor {
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+public class DuelCommand implements CommandExecutor, TabCompleter {
+
+    private static final List<String> SUBCOMMANDS = List.of(
+            "challenge", "accept", "deny", "queue", "leave", "spectate", "stats", "top", "gui");
 
     private final MellowDuels plugin;
 
@@ -29,19 +40,28 @@ public class DuelCommand implements CommandExecutor {
             return true;
         }
 
-        switch (args[0].toLowerCase()) {
+        switch (args[0].toLowerCase(Locale.ROOT)) {
             case "challenge" -> {
                 if (args.length < 3) {
-                    player.sendMessage("Usage: /duel challenge <player> <kit>");
+                    player.sendMessage("§cUsage: /duel challenge <player> <kit>");
                     return true;
                 }
-                Player target = Bukkit.getPlayer(args[1]);
+                Player target = Bukkit.getPlayerExact(args[1]);
                 if (target == null) {
                     player.sendMessage(plugin.getConfigManager().message("player-not-found"));
                     return true;
                 }
                 String result = plugin.getRequestManager().challenge(player, target, args[2]);
-                if (result.equals("already-in-duel")) player.sendMessage(plugin.getConfigManager().message("already-in-duel"));
+                switch (result) {
+                    case "already-in-duel" -> player.sendMessage(plugin.getConfigManager().message("already-in-duel"));
+                    case "self" -> player.sendMessage("§cYou cannot challenge yourself.");
+                    case "spectating" -> player.sendMessage("§cOne of you is currently spectating.");
+                    case "in-queue" -> player.sendMessage("§cLeave the queue first (/duel leave).");
+                    case "duplicate-request" -> player.sendMessage("§cThat player already has a pending challenge.");
+                    case "invalid-kit" -> player.sendMessage("§cUnknown kit: " + args[2]);
+                    default -> {
+                    }
+                }
                 return true;
             }
             case "accept" -> {
@@ -58,25 +78,48 @@ public class DuelCommand implements CommandExecutor {
             }
             case "queue" -> {
                 if (args.length < 2) {
-                    player.sendMessage("Usage: /duel queue <kit>");
+                    player.sendMessage("§cUsage: /duel queue <kit>");
                     return true;
                 }
                 String result = plugin.getQueueManager().join(player, args[1]);
-                if (result.equals("already-in-queue")) player.sendMessage(plugin.getConfigManager().message("already-in-queue"));
-                if (result.equals("already-in-duel")) player.sendMessage(plugin.getConfigManager().message("already-in-duel"));
-                if (result.equals("invalid-kit")) player.sendMessage("§cUnknown kit: " + args[1]);
+                switch (result) {
+                    case "already-in-queue" -> player.sendMessage(plugin.getConfigManager().message("already-in-queue")
+                            .replace("%kit%", args[1]));
+                    case "already-in-duel" -> player.sendMessage(plugin.getConfigManager().message("already-in-duel"));
+                    case "spectating" -> player.sendMessage("§cLeave spectator mode before queuing.");
+                    case "invalid-kit" -> player.sendMessage("§cUnknown kit: " + args[1]);
+                    default -> {
+                    }
+                }
                 return true;
             }
             case "leave" -> {
+                if (plugin.getSpectatorManager().isSpectating(player.getUniqueId())) {
+                    plugin.getSpectatorManager().stopSpectating(player);
+                    player.sendMessage("§aStopped spectating.");
+                    return true;
+                }
+                if (!plugin.getQueueManager().isQueued(player.getUniqueId())) {
+                    player.sendMessage("§cYou are not in a queue.");
+                    return true;
+                }
                 plugin.getQueueManager().leave(player);
                 return true;
             }
             case "spectate" -> {
                 if (args.length < 2) {
-                    player.sendMessage("Usage: /duel spectate <player>");
+                    player.sendMessage("§cUsage: /duel spectate <player>");
                     return true;
                 }
-                Player target = Bukkit.getPlayer(args[1]);
+                if (!plugin.getConfigManager().spectatorEnabled()) {
+                    player.sendMessage("§cSpectating is disabled.");
+                    return true;
+                }
+                if (plugin.getDuelManager().isInDuel(player.getUniqueId())) {
+                    player.sendMessage(plugin.getConfigManager().message("already-in-duel"));
+                    return true;
+                }
+                Player target = Bukkit.getPlayerExact(args[1]);
                 if (target == null) {
                     player.sendMessage(plugin.getConfigManager().message("player-not-found"));
                     return true;
@@ -86,19 +129,31 @@ public class DuelCommand implements CommandExecutor {
                     player.sendMessage("§cThat player is not currently in a duel.");
                     return true;
                 }
-                plugin.getSpectatorManager().startSpectating(player, session.getId(), session.getArena());
-                player.sendMessage(plugin.getConfigManager().message("spectating-started").replace("%player%", target.getName()));
+                if (!plugin.getSpectatorManager().startSpectating(player, session.getId(), session.getArena())) {
+                    player.sendMessage("§cCould not start spectating.");
+                    return true;
+                }
+                player.sendMessage(plugin.getConfigManager().message("spectating-started")
+                        .replace("%player%", target.getName()));
                 return true;
             }
             case "stats" -> {
-                Player target = args.length >= 2 ? Bukkit.getPlayer(args[1]) : player;
-                if (target == null) {
-                    player.sendMessage(plugin.getConfigManager().message("player-not-found"));
-                    return true;
+                OfflinePlayer target;
+                if (args.length >= 2) {
+                    Player online = Bukkit.getPlayerExact(args[1]);
+                    target = online != null ? online : Bukkit.getOfflinePlayer(args[1]);
+                    if (target.getName() == null && !target.hasPlayedBefore()) {
+                        player.sendMessage(plugin.getConfigManager().message("player-not-found"));
+                        return true;
+                    }
+                } else {
+                    target = player;
                 }
                 StatsManager.PlayerStats stats = plugin.getStatsManager().getStats(target.getUniqueId(), "__all__");
-                player.sendMessage("§b" + target.getName() + "'s stats: §f"
-                        + stats.wins + "W / " + stats.losses + "L (" + String.format("%.1f", stats.winRate()) + "%), "
+                String name = target.getName() != null ? target.getName() : args[1];
+                player.sendMessage("§b" + name + "'s stats: §f"
+                        + stats.wins + "W / " + stats.losses + "L ("
+                        + String.format(Locale.US, "%.1f", stats.winRate()) + "%), "
                         + "streak: " + stats.currentStreak + " (best " + stats.bestStreak + ")");
                 return true;
             }
@@ -106,10 +161,14 @@ public class DuelCommand implements CommandExecutor {
                 String kit = args.length >= 2 ? args[1] : "__all__";
                 var top = plugin.getStatsManager().topByWins(kit, 10);
                 player.sendMessage("§b--- Top players (" + kit + ") ---");
+                if (top.isEmpty()) {
+                    player.sendMessage("§7No stats recorded yet.");
+                    return true;
+                }
                 int rank = 1;
                 for (Object[] row : top) {
-                    String name = Bukkit.getOfflinePlayer(java.util.UUID.fromString((String) row[0])).getName();
-                    player.sendMessage("§f" + rank++ + ". " + name + " - " + row[1] + " wins");
+                    String name = Bukkit.getOfflinePlayer(UUID.fromString((String) row[0])).getName();
+                    player.sendMessage("§f" + rank++ + ". " + (name != null ? name : row[0]) + " - " + row[1] + " wins");
                 }
                 return true;
             }
@@ -118,9 +177,70 @@ public class DuelCommand implements CommandExecutor {
                 return true;
             }
             default -> {
-                player.sendMessage("Unknown subcommand. See /duel for the GUI, or use challenge/accept/deny/queue/leave/spectate/stats/top.");
+                // Treat "/duel <player> [kit]" as a shorthand challenge
+                Player target = Bukkit.getPlayerExact(args[0]);
+                if (target != null) {
+                    String kitId = args.length >= 2 ? args[1] : defaultKitId();
+                    if (kitId == null) {
+                        player.sendMessage("§cNo kits are loaded. Ask an admin to check kits.yml.");
+                        return true;
+                    }
+                    String result = plugin.getRequestManager().challenge(player, target, kitId);
+                    switch (result) {
+                        case "already-in-duel" -> player.sendMessage(plugin.getConfigManager().message("already-in-duel"));
+                        case "self" -> player.sendMessage("§cYou cannot challenge yourself.");
+                        case "spectating" -> player.sendMessage("§cOne of you is currently spectating.");
+                        case "in-queue" -> player.sendMessage("§cLeave the queue first (/duel leave).");
+                        case "duplicate-request" -> player.sendMessage("§cThat player already has a pending challenge.");
+                        case "invalid-kit" -> player.sendMessage("§cUnknown kit: " + kitId);
+                        default -> {
+                        }
+                    }
+                    return true;
+                }
+                player.sendMessage("§cUnknown subcommand. Use challenge/accept/deny/queue/leave/spectate/stats/top/gui.");
                 return true;
             }
         }
+    }
+
+    private String defaultKitId() {
+        var names = plugin.getKitManager().getKitNames();
+        return names.isEmpty() ? null : names.iterator().next();
+    }
+
+    @Override
+    public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
+        if (args.length == 1) {
+            List<String> options = new ArrayList<>(SUBCOMMANDS);
+            for (Player p : Bukkit.getOnlinePlayers()) {
+                options.add(p.getName());
+            }
+            return filter(options, args[0]);
+        }
+        if (args.length == 2) {
+            return switch (args[0].toLowerCase(Locale.ROOT)) {
+                case "challenge", "spectate", "stats" -> filter(
+                        Bukkit.getOnlinePlayers().stream().map(Player::getName).collect(Collectors.toList()),
+                        args[1]);
+                case "queue", "top" -> filter(new ArrayList<>(plugin.getKitManager().getKitNames()), args[1]);
+                default -> {
+                    // /duel <player> <kit>
+                    if (Bukkit.getPlayerExact(args[0]) != null) {
+                        yield filter(new ArrayList<>(plugin.getKitManager().getKitNames()), args[1]);
+                    }
+                    yield List.of();
+                }
+            };
+        }
+        if (args.length == 3 && args[0].equalsIgnoreCase("challenge")) {
+            return filter(new ArrayList<>(plugin.getKitManager().getKitNames()), args[2]);
+        }
+        return List.of();
+    }
+
+    private List<String> filter(List<String> options, String prefix) {
+        String p = prefix.toLowerCase(Locale.ROOT);
+        return options.stream().filter(s -> s.toLowerCase(Locale.ROOT).startsWith(p)).sorted().toList();
     }
 }

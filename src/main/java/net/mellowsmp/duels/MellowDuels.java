@@ -3,6 +3,7 @@ package net.mellowsmp.duels;
 import net.mellowsmp.duels.commands.DuelAdminCommand;
 import net.mellowsmp.duels.commands.DuelCommand;
 import net.mellowsmp.duels.listeners.DuelCombatListener;
+import net.mellowsmp.duels.listeners.KitGuiListener;
 import net.mellowsmp.duels.listeners.PlayerConnectionListener;
 import net.mellowsmp.duels.managers.ArenaManager;
 import net.mellowsmp.duels.managers.ConfigManager;
@@ -40,7 +41,7 @@ public final class MellowDuels extends JavaPlugin {
         instance = this;
 
         saveDefaultConfig();
-        saveResource_ifMissing("kits.yml");
+        saveResourceIfMissing("kits.yml");
 
         this.configManager = new ConfigManager(this);
         this.playerStateManager = new PlayerStateManager();
@@ -53,11 +54,14 @@ public final class MellowDuels extends JavaPlugin {
         this.queueManager = new QueueManager(this, duelManager, kitManager, configManager);
         this.requestManager = new RequestManager(this, duelManager, kitManager, configManager);
 
-        getCommand("duel").setExecutor(new DuelCommand(this));
+        DuelCommand duelCommand = new DuelCommand(this);
+        getCommand("duel").setExecutor(duelCommand);
+        getCommand("duel").setTabCompleter(duelCommand);
         getCommand("dueladmin").setExecutor(new DuelAdminCommand(this));
 
         getServer().getPluginManager().registerEvents(new DuelCombatListener(this), this);
         getServer().getPluginManager().registerEvents(new PlayerConnectionListener(this), this);
+        getServer().getPluginManager().registerEvents(new KitGuiListener(this), this);
 
         arenaManager.loadArenas();
         kitManager.loadKits();
@@ -75,9 +79,10 @@ public final class MellowDuels extends JavaPlugin {
         if (statsManager != null) {
             statsManager.close();
         }
+        instance = null;
     }
 
-    private void saveResource_ifMissing(String name) {
+    private void saveResourceIfMissing(String name) {
         java.io.File f = new java.io.File(getDataFolder(), name);
         if (!f.exists()) {
             saveResource(name, false);

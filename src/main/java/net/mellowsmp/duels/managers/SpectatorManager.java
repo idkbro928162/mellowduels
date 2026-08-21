@@ -2,11 +2,9 @@ package net.mellowsmp.duels.managers;
 
 import net.mellowsmp.duels.MellowDuels;
 import net.mellowsmp.duels.models.Arena;
-import net.mellowsmp.duels.models.PlayerState;
 import org.bukkit.GameMode;
 import org.bukkit.entity.Player;
 
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -21,7 +19,17 @@ public class SpectatorManager {
         this.plugin = plugin;
     }
 
-    public void startSpectating(Player spectator, String sessionId, Arena arena) {
+    public boolean startSpectating(Player spectator, String sessionId, Arena arena) {
+        if (!plugin.getConfigManager().spectatorEnabled()) {
+            return false;
+        }
+        if (plugin.getDuelManager().isInDuel(spectator.getUniqueId())) {
+            return false;
+        }
+        if (isSpectating(spectator.getUniqueId())) {
+            stopSpectating(spectator);
+        }
+
         plugin.getPlayerStateManager().save(spectator);
         spectatingSessionBySpectator.put(spectator.getUniqueId(), sessionId);
         spectator.setGameMode(GameMode.SPECTATOR);
@@ -30,9 +38,13 @@ public class SpectatorManager {
         } else {
             spectator.teleport(arena.getOrigin());
         }
+        return true;
     }
 
     public void stopSpectating(Player spectator) {
+        if (!spectatingSessionBySpectator.containsKey(spectator.getUniqueId())) {
+            return;
+        }
         spectatingSessionBySpectator.remove(spectator.getUniqueId());
         plugin.getPlayerStateManager().restore(spectator);
     }
@@ -52,6 +64,9 @@ public class SpectatorManager {
                 Player p = plugin.getServer().getPlayer(e.getKey());
                 if (p != null) {
                     stopSpectating(p);
+                } else {
+                    spectatingSessionBySpectator.remove(e.getKey());
+                    plugin.getPlayerStateManager().discard(e.getKey());
                 }
             }
         }

@@ -1,5 +1,6 @@
 package net.mellowsmp.duels.managers;
 
+import net.kyori.adventure.title.Title;
 import net.mellowsmp.duels.MellowDuels;
 import net.mellowsmp.duels.models.Arena;
 import net.mellowsmp.duels.models.DuelSession;
@@ -7,7 +8,10 @@ import net.mellowsmp.duels.models.Kit;
 import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
 import org.bukkit.entity.Player;
+import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.scheduler.BukkitTask;
 
+import java.time.Duration;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -30,6 +34,9 @@ public class DuelManager {
 
     private final Map<String, DuelSession> sessionsById = new ConcurrentHashMap<>();
     private final Map<UUID, String> sessionIdByPlayer = new ConcurrentHashMap<>();
+    private final Map<String, BukkitTask> countdownTasks = new ConcurrentHashMap<>();
+    private final Map<String, BukkitTask> durationTasks = new ConcurrentHashMap<>();
+    private final Map<UUID, BukkitTask> disconnectGraceTasks = new ConcurrentHashMap<>();
 
     public DuelManager(MellowDuels plugin, ArenaManager arenaManager, KitManager kitManager,
                         PlayerStateManager playerStateManager, StatsManager statsManager,
@@ -63,12 +70,35 @@ public class DuelManager {
      * available.
      */
     public boolean startDuel(Player a, Player b, Kit kit, String preferredTemplate) {
+        if (a == null || b == null || kit == null) {
+            return false;
+        }
+        if (a.getUniqueId().equals(b.getUniqueId())) {
+            return false;
+        }
+        if (isInDuel(a.getUniqueId()) || isInDuel(b.getUniqueId())) {
+            a.sendMessage(configManager.message("already-in-duel"));
+            b.sendMessage(configManager.message("already-in-duel"));
+            return false;
+        }
+
         Arena arena = arenaManager.reserveArena(preferredTemplate);
         if (arena == null) {
             a.sendMessage(configManager.message("no-arenas-available"));
             b.sendMessage(configManager.message("no-arenas-available"));
             return false;
         }
+        if (arena.getSpawnA() == null || arena.getSpawnB() == null) {
+            arenaManager.resetAndRelease(arena);
+            a.sendMessage(configManager.message("no-arenas-available"));
+            b.sendMessage(configManager.message("no-arenas-available"));
+            plugin.getLogger().warning("Arena " + arena.getId() + " is missing spawn points.");
+            return false;
+        }
+
+        // Leave any queues before locking into a duel
+        plugin.getQueueManager().leaveQuiet(a.getUniqueId());
+        plugin.getQueueManager().leaveQuiet(b.getUniqueId());
 
         DuelSession session = new DuelSession(a.getUniqueId(), b.getUniqueId(), arena, kit);
         arena.setState(Arena.State.IN_USE);
@@ -86,48 +116,76 @@ public class DuelManager {
         a.sendMessage(configManager.message("duel-starting"));
         b.sendMessage(configManager.message("duel-starting"));
 
-        runCountdown(session, a, b);
+        runCountdown(session);
         return true;
     }
 
     private void prepareForDuel(Player player, org.bukkit.Location spawn, Kit kit) {
+        player.closeInventory();
         player.teleport(spawn);
         kitManager.applyKit(player, kit);
-        player.setGameMode(GameMode.ADVENTURE); // frozen during countdown; switched to kit mode on start
+        // Frozen during countdown; switched to kit mode when combat begins
+        player.setGameMode(GameMode.ADVENTURE);
         player.setWalkSpeed(0f);
+        player.setFlySpeed(0f);
+        player.setAllowFlight(false);
+        player.setFlying(false);
     }
 
-    private void runCountdown(DuelSession session, Player a, Player b) {
+    private void runCountdown(DuelSession session) {
         int seconds = configManager.countdownSeconds();
         String title = configManager.raw().getString("countdown.title", "&e&lDUEL STARTING");
         String subtitleTemplate = configManager.raw().getString("countdown.subtitle", "&f%seconds%");
 
-        new org.bukkit.scheduler.BukkitRunnable() {
+        BukkitTask task = new BukkitRunnable() {
             int remaining = seconds;
 
             @Override
             public void run() {
+                if (!sessionsById.containsKey(session.getId())) {
+                    cancel();
+                    countdownTasks.remove(session.getId());
+                    return;
+                }
+
                 Player pa = Bukkit.getPlayer(session.getPlayerA());
                 Player pb = Bukkit.getPlayer(session.getPlayerB());
                 if (pa == null || pb == null) {
                     cancel();
+                    countdownTasks.remove(session.getId());
+                    handleMissingPlayerDuringCountdown(session, pa, pb);
                     return;
                 }
                 if (remaining <= 0) {
                     beginCombat(session, pa, pb);
                     cancel();
+                    countdownTasks.remove(session.getId());
                     return;
                 }
-                String subtitle = configManager.color(subtitleTemplate.replace("%seconds%", String.valueOf(remaining)));
-                pa.showTitle(net.kyori.adventure.title.Title.title(
-                        net.kyori.adventure.text.Component.text(configManager.color(title)),
-                        net.kyori.adventure.text.Component.text(subtitle)));
-                pb.showTitle(net.kyori.adventure.title.Title.title(
-                        net.kyori.adventure.text.Component.text(configManager.color(title)),
-                        net.kyori.adventure.text.Component.text(subtitle)));
+                String subtitle = subtitleTemplate.replace("%seconds%", String.valueOf(remaining));
+                Title adventureTitle = Title.title(
+                        configManager.component(title),
+                        configManager.component(subtitle),
+                        Title.Times.times(Duration.ZERO, Duration.ofMillis(1100), Duration.ofMillis(200)));
+                pa.showTitle(adventureTitle);
+                pb.showTitle(adventureTitle);
                 remaining--;
             }
         }.runTaskTimer(plugin, 0L, 20L);
+        countdownTasks.put(session.getId(), task);
+    }
+
+    private void handleMissingPlayerDuringCountdown(DuelSession session, Player pa, Player pb) {
+        if (!sessionsById.containsKey(session.getId())) {
+            return;
+        }
+        if (pa != null) {
+            endDuel(session.getId(), pa.getUniqueId(), true);
+        } else if (pb != null) {
+            endDuel(session.getId(), pb.getUniqueId(), true);
+        } else {
+            endDuel(session.getId(), null, false);
+        }
     }
 
     private void beginCombat(DuelSession session, Player a, Player b) {
@@ -139,15 +197,17 @@ public class DuelManager {
 
         if (configManager.maxDuelDurationSeconds() > 0) {
             long delayTicks = configManager.maxDuelDurationSeconds() * 20L;
-            new org.bukkit.scheduler.BukkitRunnable() {
+            BukkitTask task = new BukkitRunnable() {
                 @Override
                 public void run() {
+                    durationTasks.remove(session.getId());
                     DuelSession current = sessionsById.get(session.getId());
                     if (current != null && current.getPhase() == DuelSession.Phase.ACTIVE) {
-                        endDuel(session.getId(), session.decideWinnerByDamage());
+                        endDuel(session.getId(), session.decideWinnerByDamage(), true);
                     }
                 }
             }.runTaskLater(plugin, delayTicks);
+            durationTasks.put(session.getId(), task);
         }
     }
 
@@ -161,32 +221,29 @@ public class DuelManager {
 
     /** Ends a duel with the given winner (loser is the other participant), restoring both players. */
     public void endDuel(String sessionId, UUID winnerUuid) {
+        endDuel(sessionId, winnerUuid, true);
+    }
+
+    public void endDuel(String sessionId, UUID winnerUuid, boolean recordStats) {
+        cancelSessionTasks(sessionId);
+
         DuelSession session = sessionsById.remove(sessionId);
         if (session == null) return;
+        if (session.getPhase() == DuelSession.Phase.ENDING) return;
         session.setPhase(DuelSession.Phase.ENDING);
         session.setWinner(winnerUuid);
 
-        UUID loserUuid = session.getOpponent(winnerUuid);
+        UUID loserUuid = winnerUuid != null ? session.getOpponent(winnerUuid) : null;
         sessionIdByPlayer.remove(session.getPlayerA());
         sessionIdByPlayer.remove(session.getPlayerB());
 
-        Player winner = Bukkit.getPlayer(winnerUuid);
-        Player loser = loserUuid != null ? Bukkit.getPlayer(loserUuid) : null;
+        cancelDisconnectGrace(session.getPlayerA());
+        cancelDisconnectGrace(session.getPlayerB());
 
-        if (winner != null) {
-            playerStateManager.restore(winner);
-            winner.sendMessage(configManager.message("duel-ended-win")
-                    .replace("%opponent%", loser != null ? loser.getName() : "opponent")
-                    .replace("%kit%", session.getKit().getDisplayName()));
-        }
-        if (loser != null) {
-            playerStateManager.restore(loser);
-            loser.sendMessage(configManager.message("duel-ended-loss")
-                    .replace("%opponent%", winner != null ? winner.getName() : "opponent")
-                    .replace("%kit%", session.getKit().getDisplayName()));
-        }
+        restoreParticipant(session.getPlayerA(), winnerUuid, loserUuid, session);
+        restoreParticipant(session.getPlayerB(), winnerUuid, loserUuid, session);
 
-        if (winnerUuid != null && loserUuid != null) {
+        if (recordStats && winnerUuid != null && loserUuid != null) {
             statsManager.recordResult(winnerUuid, loserUuid, session.getKit().getId(), session.getCombatDurationMillis());
         }
 
@@ -194,28 +251,97 @@ public class DuelManager {
         arenaManager.resetAndRelease(session.getArena());
     }
 
+    private void restoreParticipant(UUID uuid, UUID winnerUuid, UUID loserUuid, DuelSession session) {
+        Player player = Bukkit.getPlayer(uuid);
+        if (player != null) {
+            playerStateManager.restore(player);
+            if (winnerUuid != null && uuid.equals(winnerUuid)) {
+                player.sendMessage(configManager.message("duel-ended-win")
+                        .replace("%opponent%", offlineName(loserUuid))
+                        .replace("%kit%", session.getKit().getDisplayName()));
+            } else if (loserUuid != null && uuid.equals(loserUuid)) {
+                player.sendMessage(configManager.message("duel-ended-loss")
+                        .replace("%opponent%", offlineName(winnerUuid))
+                        .replace("%kit%", session.getKit().getDisplayName()));
+            }
+        } else {
+            playerStateManager.discard(uuid);
+        }
+    }
+
+    private String offlineName(UUID uuid) {
+        if (uuid == null) return "opponent";
+        String name = Bukkit.getOfflinePlayer(uuid).getName();
+        return name != null ? name : "opponent";
+    }
+
+    private void cancelSessionTasks(String sessionId) {
+        BukkitTask countdown = countdownTasks.remove(sessionId);
+        if (countdown != null) countdown.cancel();
+        BukkitTask duration = durationTasks.remove(sessionId);
+        if (duration != null) duration.cancel();
+    }
+
+    private void cancelDisconnectGrace(UUID uuid) {
+        BukkitTask task = disconnectGraceTasks.remove(uuid);
+        if (task != null) task.cancel();
+    }
+
     /** Handles a player disconnecting mid-duel: counts as a forfeit if configured. */
     public void handleDisconnect(UUID uuid) {
-        if (!configManager.forfeitOnQuit()) return;
         DuelSession session = getSession(uuid);
         if (session == null) return;
-        UUID opponent = session.getOpponent(uuid);
-        if (opponent != null) {
-            Player op = Bukkit.getPlayer(opponent);
-            if (op != null) {
-                op.sendMessage(configManager.message("forfeit-quit").replace("%player%",
-                        Bukkit.getOfflinePlayer(uuid).getName()));
-            }
-            endDuel(session.getId(), opponent);
+
+        if (!configManager.forfeitOnQuit()) {
+            // Keep the session; when they never return the opponent can still win via death/timeout.
+            return;
         }
+
+        int grace = configManager.forfeitGraceSeconds();
+        UUID opponent = session.getOpponent(uuid);
+        if (grace <= 0) {
+            forfeitDisconnected(uuid, opponent);
+            return;
+        }
+
+        cancelDisconnectGrace(uuid);
+        BukkitTask task = new BukkitRunnable() {
+            @Override
+            public void run() {
+                disconnectGraceTasks.remove(uuid);
+                if (!isInDuel(uuid)) return;
+                // Still offline after grace → forfeit
+                if (Bukkit.getPlayer(uuid) == null) {
+                    forfeitDisconnected(uuid, opponent);
+                }
+            }
+        }.runTaskLater(plugin, grace * 20L);
+        disconnectGraceTasks.put(uuid, task);
+    }
+
+    /** Called when a player rejoins during the disconnect grace window. */
+    public void handleReconnect(UUID uuid) {
+        cancelDisconnectGrace(uuid);
+    }
+
+    private void forfeitDisconnected(UUID uuid, UUID opponent) {
+        DuelSession session = getSession(uuid);
+        if (session == null || opponent == null) return;
+        Player op = Bukkit.getPlayer(opponent);
+        if (op != null) {
+            op.sendMessage(configManager.message("forfeit-quit").replace("%player%", offlineName(uuid)));
+        }
+        endDuel(session.getId(), opponent, true);
     }
 
     public void endAllDuelsForShutdown() {
         for (String id : Map.copyOf(sessionsById).keySet()) {
-            DuelSession session = sessionsById.get(id);
-            if (session != null) {
-                endDuel(id, session.getPlayerA()); // arbitrary winner on shutdown, state is restored regardless
-            }
+            // Do not record stats on an abrupt shutdown — just restore and release arenas
+            endDuel(id, null, false);
         }
+        for (BukkitTask task : Map.copyOf(disconnectGraceTasks).values()) {
+            task.cancel();
+        }
+        disconnectGraceTasks.clear();
     }
 }

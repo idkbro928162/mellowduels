@@ -66,10 +66,15 @@ public class ArenaManager {
             if (section != null) {
                 for (String id : section.getKeys(false)) {
                     ConfigurationSection s = section.getConfigurationSection(id);
+                    if (s == null) continue;
                     String templateName = s.getString("template");
                     String worldName = s.getString("world");
+                    if (templateName == null || worldName == null) continue;
                     World world = Bukkit.getWorld(worldName);
-                    if (world == null) continue;
+                    if (world == null) {
+                        plugin.getLogger().warning("Skipping arena '" + id + "': world '" + worldName + "' is not loaded.");
+                        continue;
+                    }
                     Location origin = new Location(world, s.getDouble("origin.x"), s.getDouble("origin.y"), s.getDouble("origin.z"));
                     int sx = s.getInt("size.x");
                     int sy = s.getInt("size.y");
@@ -122,7 +127,6 @@ public class ArenaManager {
             sm.saveStructure(out, structure);
             templates.put(name, structure);
 
-            File index = new File(plugin.getDataFolder(), "arena-templates/" + name + ".meta.yml");
             YamlConfiguration meta = new YamlConfiguration();
             meta.set("size.x", sizeX);
             meta.set("size.y", sizeY);

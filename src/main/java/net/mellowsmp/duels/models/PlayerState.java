@@ -33,11 +33,14 @@ public class PlayerState {
     private final List<PotionEffect> potionEffects;
     private final boolean allowFlight;
     private final boolean flying;
+    private final float walkSpeed;
+    private final float flySpeed;
 
     private PlayerState(ItemStack[] inventoryContents, ItemStack[] armorContents, ItemStack offHand,
                           double health, double maxHealth, int foodLevel, float saturation,
                           int totalExperience, int level, float exp, GameMode gameMode, Location location,
-                          List<PotionEffect> potionEffects, boolean allowFlight, boolean flying) {
+                          List<PotionEffect> potionEffects, boolean allowFlight, boolean flying,
+                          float walkSpeed, float flySpeed) {
         this.inventoryContents = inventoryContents;
         this.armorContents = armorContents;
         this.offHand = offHand;
@@ -53,12 +56,16 @@ public class PlayerState {
         this.potionEffects = potionEffects;
         this.allowFlight = allowFlight;
         this.flying = flying;
+        this.walkSpeed = walkSpeed;
+        this.flySpeed = flySpeed;
     }
 
     public static PlayerState capture(Player player) {
         PlayerInventory inv = player.getInventory();
-        double maxHealth = player.getAttribute(Attribute.MAX_HEALTH) != null
-                ? player.getAttribute(Attribute.MAX_HEALTH).getBaseValue() : 20.0;
+        double maxHealth = 20.0;
+        if (player.getAttribute(Attribute.MAX_HEALTH) != null) {
+            maxHealth = player.getAttribute(Attribute.MAX_HEALTH).getBaseValue();
+        }
 
         return new PlayerState(
                 cloneArray(inv.getContents()),
@@ -75,7 +82,9 @@ public class PlayerState {
                 player.getLocation().clone(),
                 new ArrayList<>(player.getActivePotionEffects()),
                 player.getAllowFlight(),
-                player.isFlying()
+                player.isFlying(),
+                player.getWalkSpeed(),
+                player.getFlySpeed()
         );
     }
 
@@ -97,7 +106,7 @@ public class PlayerState {
         if (player.getAttribute(Attribute.MAX_HEALTH) != null) {
             player.getAttribute(Attribute.MAX_HEALTH).setBaseValue(maxHealth);
         }
-        player.setHealth(Math.min(health, maxHealth));
+        player.setHealth(Math.max(0.1, Math.min(health, maxHealth)));
         player.setFoodLevel(foodLevel);
         player.setSaturation(saturation);
         player.setTotalExperience(totalExperience);
@@ -105,7 +114,9 @@ public class PlayerState {
         player.setExp(exp);
         player.setGameMode(gameMode);
         player.setAllowFlight(allowFlight);
-        player.setFlying(flying);
+        player.setFlying(flying && allowFlight);
+        player.setWalkSpeed(walkSpeed);
+        player.setFlySpeed(flySpeed);
         player.teleport(location);
     }
 

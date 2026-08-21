@@ -101,7 +101,15 @@ public class DuelAdminCommand implements CommandExecutor {
                     return true;
                 }
                 String template = args[2];
-                int count = args.length >= 4 ? Integer.parseInt(args[3]) : 1;
+                int count = 1;
+                if (args.length >= 4) {
+                    try {
+                        count = Math.max(1, Math.min(50, Integer.parseInt(args[3])));
+                    } catch (NumberFormatException e) {
+                        sender.sendMessage("§cCount must be a number.");
+                        return true;
+                    }
+                }
                 int made = 0;
                 for (int i = 0; i < count; i++) {
                     if (plugin.getArenaManager().generateCopy(template) != null) made++;

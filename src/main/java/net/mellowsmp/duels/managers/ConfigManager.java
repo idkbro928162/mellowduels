@@ -1,10 +1,13 @@
 package net.mellowsmp.duels.managers;
 
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import net.mellowsmp.duels.MellowDuels;
-import net.md_5.bungee.api.ChatColor;
 import org.bukkit.configuration.file.FileConfiguration;
 
 public class ConfigManager {
+
+    private static final LegacyComponentSerializer LEGACY = LegacyComponentSerializer.legacyAmpersand();
 
     private final MellowDuels plugin;
 
@@ -23,7 +26,7 @@ public class ConfigManager {
     public String message(String key) {
         String prefix = raw().getString("messages.prefix", "");
         String msg = raw().getString("messages." + key, "&c[missing message: " + key + "]");
-        return color(prefix + msg);
+        return color(msg.replace("%prefix%", prefix));
     }
 
     public String messageRaw(String key) {
@@ -31,11 +34,24 @@ public class ConfigManager {
     }
 
     public String color(String s) {
-        return ChatColor.translateAlternateColorCodes('&', s);
+        if (s == null) return "";
+        // Convert &-codes into §-codes for Bukkit string messages
+        return LegacyComponentSerializer.legacySection().serialize(LEGACY.deserialize(s));
+    }
+
+    /** Converts an &- or §-colored string into an Adventure component for titles/GUI. */
+    public Component component(String s) {
+        if (s == null || s.isEmpty()) {
+            return Component.empty();
+        }
+        if (s.indexOf('§') >= 0) {
+            return LegacyComponentSerializer.legacySection().deserialize(s);
+        }
+        return LEGACY.deserialize(s);
     }
 
     public int countdownSeconds() {
-        return raw().getInt("countdown.seconds", 5);
+        return Math.max(0, raw().getInt("countdown.seconds", 5));
     }
 
     public String arenaWorldName() {
@@ -43,11 +59,11 @@ public class ConfigManager {
     }
 
     public int arenaSpacing() {
-        return raw().getInt("arenas.spacing", 250);
+        return Math.max(1, raw().getInt("arenas.spacing", 250));
     }
 
     public int minSpareCopies() {
-        return raw().getInt("arenas.min-spare-copies", 2);
+        return Math.max(0, raw().getInt("arenas.min-spare-copies", 2));
     }
 
     public int maxDuelDurationSeconds() {
@@ -59,7 +75,15 @@ public class ConfigManager {
     }
 
     public int forfeitGraceSeconds() {
-        return raw().getInt("duel.forfeit-on-disconnect-grace-seconds", 15);
+        return Math.max(0, raw().getInt("duel.forfeit-on-disconnect-grace-seconds", 15));
+    }
+
+    public boolean disableHunger() {
+        return raw().getBoolean("duel.disable-hunger", false);
+    }
+
+    public boolean disableNaturalRegen() {
+        return raw().getBoolean("duel.disable-natural-regen", false);
     }
 
     public boolean spectatorEnabled() {

@@ -42,8 +42,9 @@ spectator:
 messages:
   prefix: "&8[&bDuels&8] &r"
   challenge-sent: "%prefix%&fYou challenged &b%target%&f to a duel using kit &b%kit%&f."
-  challenge-received: "%prefix%&b%player%&f has challenged you to a duel! Type &b/duel accept %player%&f to accept."
+  challenge-received: "%prefix%&b%player%&f has challenged you to a &b%kit%&f duel! Type &b/duel accept&f to accept."
   challenge-expired: "%prefix%&cYour challenge to %target% has expired."
+  challenge-denied: "%prefix%&c%player% denied your duel challenge."
   duel-starting: "%prefix%&fYour duel is starting in an available arena..."
   duel-ended-win: "%prefix%&a&lYou won! &r&fvs %opponent% (%kit%)"
   duel-ended-loss: "%prefix%&c&lYou lost. &r&fvs %opponent% (%kit%)"

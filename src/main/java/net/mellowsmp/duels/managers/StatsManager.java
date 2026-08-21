@@ -8,14 +8,14 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
 /**
  * Tracks per-player and per-kit duel statistics using an embedded SQLite
- * database (or MySQL if configured). Designed so leaderboard queries can be
- * added easily on top of the existing schema.
+ * database (or MySQL if configured).
  */
 public class StatsManager {
 
@@ -36,6 +36,7 @@ public class StatsManager {
     private final MellowDuels plugin;
     private final ConfigManager configManager;
     private Connection connection;
+    private boolean sqlite;
 
     public StatsManager(MellowDuels plugin, ConfigManager configManager) {
         this.plugin = plugin;
@@ -45,36 +46,50 @@ public class StatsManager {
     public void init() {
         try {
             if ("MYSQL".equalsIgnoreCase(configManager.storageType())) {
+                sqlite = false;
                 String host = configManager.raw().getString("storage.mysql.host");
                 int port = configManager.raw().getInt("storage.mysql.port");
                 String db = configManager.raw().getString("storage.mysql.database");
                 String user = configManager.raw().getString("storage.mysql.username");
                 String pass = configManager.raw().getString("storage.mysql.password");
-                String url = "jdbc:mysql://" + host + ":" + port + "/" + db;
+                String url = "jdbc:mysql://" + host + ":" + port + "/" + db + "?useSSL=false";
                 connection = DriverManager.getConnection(url, user, pass);
             } else {
+                sqlite = true;
                 File dbFile = new File(plugin.getDataFolder(), "stats.db");
+                if (!plugin.getDataFolder().exists()) {
+                    plugin.getDataFolder().mkdirs();
+                }
+                Class.forName("org.sqlite.JDBC");
                 connection = DriverManager.getConnection("jdbc:sqlite:" + dbFile.getAbsolutePath());
             }
             createTables();
-        } catch (SQLException e) {
+        } catch (Exception e) {
             plugin.getLogger().severe("Failed to connect to statistics database: " + e.getMessage());
+            connection = null;
         }
     }
 
     private void createTables() throws SQLException {
-        try (PreparedStatement ps = connection.prepareStatement(
-                "CREATE TABLE IF NOT EXISTS player_stats (" +
-                        "uuid VARCHAR(36), kit VARCHAR(64), wins INT DEFAULT 0, losses INT DEFAULT 0, " +
-                        "kills INT DEFAULT 0, deaths INT DEFAULT 0, matches INT DEFAULT 0, " +
-                        "current_streak INT DEFAULT 0, best_streak INT DEFAULT 0, total_duration_ms BIGINT DEFAULT 0, " +
-                        "PRIMARY KEY (uuid, kit))")) {
-            ps.executeUpdate();
+        try (Statement st = connection.createStatement()) {
+            st.executeUpdate(
+                    "CREATE TABLE IF NOT EXISTS player_stats (" +
+                            "uuid VARCHAR(36) NOT NULL, kit VARCHAR(64) NOT NULL, " +
+                            "wins INT DEFAULT 0, losses INT DEFAULT 0, " +
+                            "kills INT DEFAULT 0, deaths INT DEFAULT 0, matches INT DEFAULT 0, " +
+                            "current_streak INT DEFAULT 0, best_streak INT DEFAULT 0, " +
+                            "total_duration_ms BIGINT DEFAULT 0, " +
+                            "PRIMARY KEY (uuid, kit))");
         }
+    }
+
+    private boolean ready() {
+        return connection != null;
     }
 
     /** Records the result of a finished duel for both players, split per-kit and combined ("__all__"). */
     public void recordResult(UUID winner, UUID loser, String kit, long durationMillis) {
+        if (!ready()) return;
         try {
             upsertResult(winner, kit, true, durationMillis);
             upsertResult(winner, "__all__", true, durationMillis);
@@ -94,10 +109,18 @@ public class StatsManager {
         int bestStreak = Math.max(existing.bestStreak, currentStreak);
         long totalDuration = existing.totalDurationMillis + durationMillis;
 
-        try (PreparedStatement ps = connection.prepareStatement(
-                "INSERT INTO player_stats (uuid, kit, wins, losses, matches, current_streak, best_streak, total_duration_ms) " +
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?) " +
-                        "ON CONFLICT(uuid, kit) DO UPDATE SET wins=?, losses=?, matches=?, current_streak=?, best_streak=?, total_duration_ms=?")) {
+        String sql;
+        if (sqlite) {
+            sql = "INSERT INTO player_stats (uuid, kit, wins, losses, matches, current_streak, best_streak, total_duration_ms) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?) " +
+                    "ON CONFLICT(uuid, kit) DO UPDATE SET wins=?, losses=?, matches=?, current_streak=?, best_streak=?, total_duration_ms=?";
+        } else {
+            sql = "INSERT INTO player_stats (uuid, kit, wins, losses, matches, current_streak, best_streak, total_duration_ms) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?) " +
+                    "ON DUPLICATE KEY UPDATE wins=?, losses=?, matches=?, current_streak=?, best_streak=?, total_duration_ms=?";
+        }
+
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
             ps.setString(1, uuid.toString());
             ps.setString(2, kit);
             ps.setInt(3, wins);
@@ -118,6 +141,7 @@ public class StatsManager {
 
     public PlayerStats getStats(UUID uuid, String kit) {
         PlayerStats stats = new PlayerStats();
+        if (!ready()) return stats;
         try (PreparedStatement ps = connection.prepareStatement(
                 "SELECT * FROM player_stats WHERE uuid = ? AND kit = ?")) {
             ps.setString(1, uuid.toString());
@@ -141,6 +165,7 @@ public class StatsManager {
     /** Basic leaderboard query: top players by wins for a given kit ("__all__" for overall). */
     public List<Object[]> topByWins(String kit, int limit) {
         List<Object[]> results = new ArrayList<>();
+        if (!ready()) return results;
         try (PreparedStatement ps = connection.prepareStatement(
                 "SELECT uuid, wins FROM player_stats WHERE kit = ? ORDER BY wins DESC LIMIT ?")) {
             ps.setString(1, kit);
@@ -161,5 +186,6 @@ public class StatsManager {
             if (connection != null) connection.close();
         } catch (SQLException ignored) {
         }
+        connection = null;
     }
 }

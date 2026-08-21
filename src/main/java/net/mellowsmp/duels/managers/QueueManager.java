@@ -5,9 +5,9 @@ import net.mellowsmp.duels.models.Kit;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 
-import java.util.LinkedHashSet;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -22,7 +22,7 @@ public class QueueManager {
     private final KitManager kitManager;
     private final ConfigManager configManager;
 
-    private final Map<String, Set<UUID>> queuesByKit = new ConcurrentHashMap<>();
+    private final Map<String, Deque<UUID>> queuesByKit = new ConcurrentHashMap<>();
     private final Map<UUID, String> kitByQueuedPlayer = new ConcurrentHashMap<>();
 
     public QueueManager(MellowDuels plugin, DuelManager duelManager, KitManager kitManager, ConfigManager configManager) {
@@ -43,13 +43,18 @@ public class QueueManager {
         if (duelManager.isInDuel(player.getUniqueId())) {
             return "already-in-duel";
         }
+        if (plugin.getSpectatorManager().isSpectating(player.getUniqueId())) {
+            return "spectating";
+        }
         Kit kit = kitManager.getKit(kitId);
         if (kit == null) {
             return "invalid-kit";
         }
 
-        Set<UUID> queue = queuesByKit.computeIfAbsent(kitId, k -> new LinkedHashSet<>());
-        queue.add(player.getUniqueId());
+        Deque<UUID> queue = queuesByKit.computeIfAbsent(kitId, k -> new ArrayDeque<>());
+        synchronized (queue) {
+            queue.addLast(player.getUniqueId());
+        }
         kitByQueuedPlayer.put(player.getUniqueId(), kitId);
         player.sendMessage(configManager.message("queue-joined").replace("%kit%", kit.getDisplayName()));
 
@@ -58,40 +63,89 @@ public class QueueManager {
     }
 
     public void leave(Player player) {
-        String kitId = kitByQueuedPlayer.remove(player.getUniqueId());
+        String kitId = leaveQuiet(player.getUniqueId());
         if (kitId != null) {
-            Set<UUID> queue = queuesByKit.get(kitId);
-            if (queue != null) queue.remove(player.getUniqueId());
             Kit kit = kitManager.getKit(kitId);
             player.sendMessage(configManager.message("queue-left")
                     .replace("%kit%", kit != null ? kit.getDisplayName() : kitId));
         }
     }
 
-    private void tryMatch(String kitId) {
-        Set<UUID> queue = queuesByKit.get(kitId);
-        if (queue == null || queue.size() < 2) return;
+    /** Removes a player from any queue without messaging them. */
+    public String leaveQuiet(UUID uuid) {
+        String kitId = kitByQueuedPlayer.remove(uuid);
+        if (kitId != null) {
+            Deque<UUID> queue = queuesByKit.get(kitId);
+            if (queue != null) {
+                synchronized (queue) {
+                    queue.remove(uuid);
+                }
+            }
+        }
+        return kitId;
+    }
 
-        UUID[] pair = queue.toArray(new UUID[0]);
-        UUID uuidA = pair[0];
-        UUID uuidB = pair[1];
+    private void tryMatch(String kitId) {
+        Deque<UUID> queue = queuesByKit.get(kitId);
+        if (queue == null) return;
+
+        UUID uuidA;
+        UUID uuidB;
+        synchronized (queue) {
+            if (queue.size() < 2) return;
+            uuidA = queue.pollFirst();
+            uuidB = queue.pollFirst();
+        }
+        if (uuidA == null || uuidB == null) {
+            if (uuidA != null) requeue(uuidA, kitId);
+            if (uuidB != null) requeue(uuidB, kitId);
+            return;
+        }
+
+        kitByQueuedPlayer.remove(uuidA);
+        kitByQueuedPlayer.remove(uuidB);
 
         Player a = Bukkit.getPlayer(uuidA);
         Player b = Bukkit.getPlayer(uuidB);
 
-        queue.remove(uuidA);
-        queue.remove(uuidB);
-        kitByQueuedPlayer.remove(uuidA);
-        kitByQueuedPlayer.remove(uuidB);
-
         if (a == null || b == null) {
-            // one disconnected between queueing and matching; requeue the one still online
             if (a != null) join(a, kitId);
             if (b != null) join(b, kitId);
             return;
         }
 
         Kit kit = kitManager.getKit(kitId);
-        duelManager.startDuel(a, b, kit, null);
+        if (kit == null) {
+            a.sendMessage("§cThat kit is no longer available.");
+            b.sendMessage("§cThat kit is no longer available.");
+            return;
+        }
+
+        if (!duelManager.startDuel(a, b, kit, null)) {
+            // Arena unavailable — put them back without immediately rematching (avoids recursion)
+            enqueueOnly(a, kitId);
+            enqueueOnly(b, kitId);
+        }
+    }
+
+    private void enqueueOnly(Player player, String kitId) {
+        if (isQueued(player.getUniqueId()) || duelManager.isInDuel(player.getUniqueId())) {
+            return;
+        }
+        Kit kit = kitManager.getKit(kitId);
+        if (kit == null) return;
+        Deque<UUID> queue = queuesByKit.computeIfAbsent(kitId, k -> new ArrayDeque<>());
+        synchronized (queue) {
+            queue.addLast(player.getUniqueId());
+        }
+        kitByQueuedPlayer.put(player.getUniqueId(), kitId);
+        player.sendMessage(configManager.message("queue-joined").replace("%kit%", kit.getDisplayName()));
+    }
+
+    private void requeue(UUID uuid, String kitId) {
+        Player player = Bukkit.getPlayer(uuid);
+        if (player != null) {
+            enqueueOnly(player, kitId);
+        }
     }
 }
