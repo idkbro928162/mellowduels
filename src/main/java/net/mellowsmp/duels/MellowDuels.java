@@ -3,6 +3,8 @@ package net.mellowsmp.duels;
 import net.mellowsmp.duels.commands.DuelAdminCommand;
 import net.mellowsmp.duels.commands.DuelCommand;
 import net.mellowsmp.duels.listeners.DuelCombatListener;
+import net.mellowsmp.duels.listeners.DuelRestrictionListener;
+import net.mellowsmp.duels.listeners.KitGuiListener;
 import net.mellowsmp.duels.listeners.PlayerConnectionListener;
 import net.mellowsmp.duels.managers.ArenaManager;
 import net.mellowsmp.duels.managers.ConfigManager;
@@ -13,6 +15,7 @@ import net.mellowsmp.duels.managers.QueueManager;
 import net.mellowsmp.duels.managers.RequestManager;
 import net.mellowsmp.duels.managers.SpectatorManager;
 import net.mellowsmp.duels.managers.StatsManager;
+import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.java.JavaPlugin;
 
 /**
@@ -40,7 +43,7 @@ public final class MellowDuels extends JavaPlugin {
         instance = this;
 
         saveDefaultConfig();
-        saveResource_ifMissing("kits.yml");
+        saveResourceIfMissing("kits.yml");
 
         this.configManager = new ConfigManager(this);
         this.playerStateManager = new PlayerStateManager();
@@ -53,14 +56,30 @@ public final class MellowDuels extends JavaPlugin {
         this.queueManager = new QueueManager(this, duelManager, kitManager, configManager);
         this.requestManager = new RequestManager(this, duelManager, kitManager, configManager);
 
-        getCommand("duel").setExecutor(new DuelCommand(this));
-        getCommand("dueladmin").setExecutor(new DuelAdminCommand(this));
+        DuelCommand duelCommand = new DuelCommand(this);
+        DuelAdminCommand adminCommand = new DuelAdminCommand(this);
+        PluginCommand duel = getCommand("duel");
+        PluginCommand dueladmin = getCommand("dueladmin");
+        if (duel != null) {
+            duel.setExecutor(duelCommand);
+            duel.setTabCompleter(duelCommand);
+        } else {
+            getLogger().severe("Command 'duel' is missing from plugin.yml");
+        }
+        if (dueladmin != null) {
+            dueladmin.setExecutor(adminCommand);
+            dueladmin.setTabCompleter(adminCommand);
+        } else {
+            getLogger().severe("Command 'dueladmin' is missing from plugin.yml");
+        }
 
         getServer().getPluginManager().registerEvents(new DuelCombatListener(this), this);
+        getServer().getPluginManager().registerEvents(new DuelRestrictionListener(this), this);
         getServer().getPluginManager().registerEvents(new PlayerConnectionListener(this), this);
+        getServer().getPluginManager().registerEvents(new KitGuiListener(this, duelCommand), this);
 
-        arenaManager.loadArenas();
         kitManager.loadKits();
+        arenaManager.loadArenas();
         statsManager.init();
 
         getLogger().info("MellowDuels enabled. " + arenaManager.getArenaCount() + " arena(s) loaded, "
@@ -69,15 +88,25 @@ public final class MellowDuels extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (spectatorManager != null) {
+            spectatorManager.stopAll();
+        }
+        if (queueManager != null) {
+            queueManager.clearAll();
+        }
         if (duelManager != null) {
             duelManager.endAllDuelsForShutdown();
+        }
+        if (playerStateManager != null) {
+            playerStateManager.restoreAllOnline();
         }
         if (statsManager != null) {
             statsManager.close();
         }
+        instance = null;
     }
 
-    private void saveResource_ifMissing(String name) {
+    private void saveResourceIfMissing(String name) {
         java.io.File f = new java.io.File(getDataFolder(), name);
         if (!f.exists()) {
             saveResource(name, false);

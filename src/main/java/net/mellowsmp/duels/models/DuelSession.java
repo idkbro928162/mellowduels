@@ -1,6 +1,10 @@
 package net.mellowsmp.duels.models;
 
+import org.bukkit.scheduler.BukkitTask;
+
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Represents one active (or recently finished) duel: the two participants,
@@ -26,6 +30,13 @@ public class DuelSession {
     private long combatStartedAtMillis;
     private double damageDealtByA;
     private double damageDealtByB;
+
+    private BukkitTask countdownTask;
+    private BukkitTask timeoutTask;
+    private BukkitTask reconnectTask;
+
+    private final Set<UUID> disconnected = ConcurrentHashMap.newKeySet();
+    private volatile boolean internalTeleport;
 
     public DuelSession(UUID playerA, UUID playerB, Arena arena, Kit kit) {
         this.id = UUID.randomUUID().toString();
@@ -105,5 +116,72 @@ public class DuelSession {
     /** Used for the max-duration timeout rule: whoever dealt more damage wins. */
     public UUID decideWinnerByDamage() {
         return damageDealtByA >= damageDealtByB ? playerA : playerB;
+    }
+
+    public BukkitTask getCountdownTask() {
+        return countdownTask;
+    }
+
+    public void setCountdownTask(BukkitTask countdownTask) {
+        this.countdownTask = countdownTask;
+    }
+
+    public void cancelCountdown() {
+        if (countdownTask != null) {
+            countdownTask.cancel();
+            countdownTask = null;
+        }
+    }
+
+    public void setTimeoutTask(BukkitTask timeoutTask) {
+        this.timeoutTask = timeoutTask;
+    }
+
+    public void setReconnectTask(BukkitTask reconnectTask) {
+        cancelReconnectTask();
+        this.reconnectTask = reconnectTask;
+    }
+
+    public void cancelReconnectTask() {
+        if (reconnectTask != null) {
+            reconnectTask.cancel();
+            reconnectTask = null;
+        }
+    }
+
+    public void cancelTasks() {
+        if (countdownTask != null) {
+            countdownTask.cancel();
+            countdownTask = null;
+        }
+        if (timeoutTask != null) {
+            timeoutTask.cancel();
+            timeoutTask = null;
+        }
+        cancelReconnectTask();
+    }
+
+    public void markDisconnected(UUID uuid) {
+        disconnected.add(uuid);
+    }
+
+    public void markReconnected(UUID uuid) {
+        disconnected.remove(uuid);
+    }
+
+    public boolean isDisconnected(UUID uuid) {
+        return disconnected.contains(uuid);
+    }
+
+    public boolean bothDisconnected() {
+        return disconnected.contains(playerA) && disconnected.contains(playerB);
+    }
+
+    public boolean isInternalTeleport() {
+        return internalTeleport;
+    }
+
+    public void setInternalTeleport(boolean internalTeleport) {
+        this.internalTeleport = internalTeleport;
     }
 }

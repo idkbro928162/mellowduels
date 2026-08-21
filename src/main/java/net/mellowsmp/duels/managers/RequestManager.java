@@ -17,7 +17,7 @@ public class RequestManager {
 
     private static final long REQUEST_TIMEOUT_MILLIS = 60_000L;
 
-    private record PendingRequest(UUID challenger, String kitId, long sentAtMillis) {
+    private record PendingRequest(UUID challenger, UUID target, String kitId, long sentAtMillis) {
     }
 
     private final MellowDuels plugin;
@@ -25,8 +25,8 @@ public class RequestManager {
     private final KitManager kitManager;
     private final ConfigManager configManager;
 
-    // key = target player uuid, value = who challenged them
-    private final Map<UUID, PendingRequest> incomingRequests = new ConcurrentHashMap<>();
+    /** target uuid -> challenger uuid -> request */
+    private final Map<UUID, Map<UUID, PendingRequest>> incomingRequests = new ConcurrentHashMap<>();
 
     public RequestManager(MellowDuels plugin, DuelManager duelManager, KitManager kitManager, ConfigManager configManager) {
         this.plugin = plugin;
@@ -36,59 +36,138 @@ public class RequestManager {
     }
 
     public String challenge(Player challenger, Player target, String kitId) {
-        if (duelManager.isInDuel(challenger.getUniqueId()) || duelManager.isInDuel(target.getUniqueId())) {
+        if (challenger.getUniqueId().equals(target.getUniqueId())) {
+            return "cannot-challenge-self";
+        }
+        if (duelManager.isInDuel(challenger.getUniqueId())) {
             return "already-in-duel";
         }
-        if (incomingRequests.containsKey(target.getUniqueId())) {
-            return "duplicate-request";
+        if (duelManager.isInDuel(target.getUniqueId())) {
+            return "opponent-in-duel";
+        }
+        if (plugin.getSpectatorManager().isSpectating(challenger.getUniqueId())
+                || plugin.getSpectatorManager().isSpectating(target.getUniqueId())) {
+            return "cannot-spectate";
         }
         Kit kit = kitManager.getKit(kitId);
         if (kit == null) {
             return "invalid-kit";
         }
 
-        incomingRequests.put(target.getUniqueId(), new PendingRequest(challenger.getUniqueId(), kitId, System.currentTimeMillis()));
+        Map<UUID, PendingRequest> forTarget = incomingRequests.computeIfAbsent(target.getUniqueId(), k -> new ConcurrentHashMap<>());
+        if (configManager.preventDuplicateRequests() && !forTarget.isEmpty() && !forTarget.containsKey(challenger.getUniqueId())) {
+            return "duplicate-request";
+        }
 
-        challenger.sendMessage(configManager.message("challenge-sent")
-                .replace("%target%", target.getName()).replace("%kit%", kit.getDisplayName()));
-        target.sendMessage(configManager.message("challenge-received").replace("%player%", challenger.getName()));
+        PendingRequest request = new PendingRequest(challenger.getUniqueId(), target.getUniqueId(), kit.getId(), System.currentTimeMillis());
+        forTarget.put(challenger.getUniqueId(), request);
 
-        // auto-expire after timeout
-        new org.bukkit.scheduler.BukkitRunnable() {
-            @Override
-            public void run() {
-                PendingRequest req = incomingRequests.get(target.getUniqueId());
-                if (req != null && req.challenger().equals(challenger.getUniqueId())) {
-                    incomingRequests.remove(target.getUniqueId());
-                    Player c = Bukkit.getPlayer(challenger.getUniqueId());
-                    if (c != null) {
-                        c.sendMessage(configManager.message("challenge-expired").replace("%target%", target.getName()));
-                    }
-                }
-            }
-        }.runTaskLater(plugin, REQUEST_TIMEOUT_MILLIS / 50);
+        challenger.sendMessage(configManager.message("challenge-sent",
+                "%target%", target.getName(), "%kit%", kit.getDisplayName()));
+        target.sendMessage(configManager.message("challenge-received",
+                "%player%", challenger.getName(), "%kit%", kit.getDisplayName()));
 
+        Bukkit.getScheduler().runTaskLater(plugin, () -> expire(request), 20L * (REQUEST_TIMEOUT_MILLIS / 1000L));
         return "sent";
     }
 
-    public boolean accept(Player target) {
-        PendingRequest req = incomingRequests.remove(target.getUniqueId());
-        if (req == null) return false;
-        if (System.currentTimeMillis() - req.sentAtMillis() > REQUEST_TIMEOUT_MILLIS) return false;
+    private void expire(PendingRequest request) {
+        Map<UUID, PendingRequest> forTarget = incomingRequests.get(request.target());
+        if (forTarget == null) {
+            return;
+        }
+        PendingRequest current = forTarget.get(request.challenger());
+        if (current == null || current.sentAtMillis() != request.sentAtMillis()) {
+            return;
+        }
+        forTarget.remove(request.challenger());
+        if (forTarget.isEmpty()) {
+            incomingRequests.remove(request.target());
+        }
+        Player challenger = Bukkit.getPlayer(request.challenger());
+        Player target = Bukkit.getPlayer(request.target());
+        if (challenger != null) {
+            String targetName = target != null ? target.getName() : "that player";
+            challenger.sendMessage(configManager.message("challenge-expired", "%target%", targetName));
+        }
+    }
+
+    public boolean accept(Player target, UUID expectedChallenger) {
+        Map<UUID, PendingRequest> forTarget = incomingRequests.get(target.getUniqueId());
+        if (forTarget == null || forTarget.isEmpty()) {
+            return false;
+        }
+
+        PendingRequest req;
+        if (expectedChallenger != null) {
+            req = forTarget.remove(expectedChallenger);
+        } else if (forTarget.size() == 1) {
+            UUID only = forTarget.keySet().iterator().next();
+            req = forTarget.remove(only);
+        } else {
+            return false;
+        }
+        if (forTarget.isEmpty()) {
+            incomingRequests.remove(target.getUniqueId());
+        }
+        if (req == null) {
+            return false;
+        }
+        if (System.currentTimeMillis() - req.sentAtMillis() > REQUEST_TIMEOUT_MILLIS) {
+            return false;
+        }
 
         Player challenger = Bukkit.getPlayer(req.challenger());
-        if (challenger == null) return false;
+        if (challenger == null || !challenger.isOnline()) {
+            target.sendMessage(configManager.message("challenger-offline"));
+            return true;
+        }
+        if (duelManager.isInDuel(challenger.getUniqueId()) || duelManager.isInDuel(target.getUniqueId())) {
+            target.sendMessage(configManager.message("already-in-duel"));
+            return true;
+        }
 
         Kit kit = kitManager.getKit(req.kitId());
+        if (kit == null) {
+            target.sendMessage(configManager.message("invalid-kit", "%kit%", req.kitId()));
+            return true;
+        }
+
+        plugin.getQueueManager().leave(challenger, true);
+        plugin.getQueueManager().leave(target, true);
         duelManager.startDuel(challenger, target, kit, null);
         return true;
     }
 
+    public boolean accept(Player target) {
+        return accept(target, null);
+    }
+
     public boolean deny(Player target) {
-        return incomingRequests.remove(target.getUniqueId()) != null;
+        Map<UUID, PendingRequest> forTarget = incomingRequests.remove(target.getUniqueId());
+        if (forTarget == null || forTarget.isEmpty()) {
+            return false;
+        }
+        target.sendMessage(configManager.message("challenge-denied-self"));
+        for (PendingRequest req : forTarget.values()) {
+            Player challenger = Bukkit.getPlayer(req.challenger());
+            if (challenger != null) {
+                challenger.sendMessage(configManager.message("challenge-denied", "%player%", target.getName()));
+            }
+        }
+        return true;
     }
 
     public boolean hasIncomingRequest(UUID uuid) {
-        return incomingRequests.containsKey(uuid);
+        Map<UUID, PendingRequest> forTarget = incomingRequests.get(uuid);
+        return forTarget != null && !forTarget.isEmpty();
+    }
+
+    public void clearFor(UUID uuid) {
+        incomingRequests.remove(uuid);
+        for (Map.Entry<UUID, Map<UUID, PendingRequest>> e : incomingRequests.entrySet()) {
+            e.getValue().remove(uuid);
+        }
+        incomingRequests.entrySet().removeIf(e -> e.getValue().isEmpty());
     }
 }

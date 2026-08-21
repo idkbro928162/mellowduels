@@ -5,10 +5,13 @@ import org.bukkit.World;
 
 /**
  * Represents one physical, playable arena instance (a pasted copy of an arena
- * template). Tracks its bounding box, spawn points, and reservation state so
- * the ArenaManager can hand it out to duels and reclaim it afterwards.
+ * template, or a generated builtin platform). Tracks its bounding box, spawn
+ * points, and reservation state so the ArenaManager can hand it out to duels
+ * and reclaim it afterwards.
  */
 public class Arena {
+
+    public static final String BUILTIN_TEMPLATE = "__builtin__";
 
     public enum State {
         AVAILABLE,
@@ -20,15 +23,17 @@ public class Arena {
     private final String id;
     private final String templateName;
     private final World world;
-    private final Location origin;      // paste origin (min corner) of this copy
+    private final Location origin;
     private final int sizeX, sizeY, sizeZ;
+    private final int gridSlot;
     private Location spawnA;
     private Location spawnB;
     private Location spectatorSpawn;
     private volatile State state = State.AVAILABLE;
     private String currentSessionId;
 
-    public Arena(String id, String templateName, World world, Location origin, int sizeX, int sizeY, int sizeZ) {
+    public Arena(String id, String templateName, World world, Location origin,
+                 int sizeX, int sizeY, int sizeZ, int gridSlot) {
         this.id = id;
         this.templateName = templateName;
         this.world = world;
@@ -36,6 +41,7 @@ public class Arena {
         this.sizeX = sizeX;
         this.sizeY = sizeY;
         this.sizeZ = sizeZ;
+        this.gridSlot = gridSlot;
     }
 
     public String getId() {
@@ -44,6 +50,10 @@ public class Arena {
 
     public String getTemplateName() {
         return templateName;
+    }
+
+    public boolean isBuiltin() {
+        return BUILTIN_TEMPLATE.equals(templateName);
     }
 
     public World getWorld() {
@@ -64,6 +74,10 @@ public class Arena {
 
     public int getSizeZ() {
         return sizeZ;
+    }
+
+    public int getGridSlot() {
+        return gridSlot;
     }
 
     public Location getSpawnA() {
@@ -88,6 +102,13 @@ public class Arena {
 
     public void setSpectatorSpawn(Location spectatorSpawn) {
         this.spectatorSpawn = spectatorSpawn;
+    }
+
+    public Location spawnOrOrigin(Location spawn) {
+        if (spawn != null) {
+            return spawn;
+        }
+        return origin.clone().add(sizeX / 2.0, 1, sizeZ / 2.0);
     }
 
     public State getState() {

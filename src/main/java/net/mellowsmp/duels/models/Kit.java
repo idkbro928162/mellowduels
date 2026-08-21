@@ -2,11 +2,10 @@ package net.mellowsmp.duels.models;
 
 import org.bukkit.GameMode;
 import org.bukkit.Material;
-import org.bukkit.enchantments.Enchantment;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.potion.PotionEffect;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -25,22 +24,22 @@ public class Kit {
     private final int hunger;
     private final boolean disableNaturalRegen;
     private final Map<Integer, ItemStack> items;
-    private final Map<String, ItemStack> armor; // helmet/chestplate/leggings/boots
+    private final Map<String, ItemStack> armor;
     private final List<PotionEffect> effects;
 
     public Kit(String id, String displayName, Material icon, GameMode gameMode, double health, int hunger,
-                boolean disableNaturalRegen, Map<Integer, ItemStack> items, Map<String, ItemStack> armor,
-                List<PotionEffect> effects) {
+               boolean disableNaturalRegen, Map<Integer, ItemStack> items, Map<String, ItemStack> armor,
+               List<PotionEffect> effects) {
         this.id = id;
         this.displayName = displayName;
-        this.icon = icon;
-        this.gameMode = gameMode;
+        this.icon = icon != null ? icon : Material.STONE_SWORD;
+        this.gameMode = gameMode != null ? gameMode : GameMode.SURVIVAL;
         this.health = health;
         this.hunger = hunger;
         this.disableNaturalRegen = disableNaturalRegen;
-        this.items = items;
-        this.armor = armor;
-        this.effects = effects;
+        this.items = items != null ? items : Map.of();
+        this.armor = armor != null ? armor : Map.of();
+        this.effects = effects != null ? effects : List.of();
     }
 
     public String getId() {
@@ -87,7 +86,9 @@ public class Kit {
     public Map<Integer, ItemStack> cloneItems() {
         Map<Integer, ItemStack> copy = new HashMap<>();
         for (Map.Entry<Integer, ItemStack> e : items.entrySet()) {
-            copy.put(e.getKey(), e.getValue().clone());
+            if (e.getValue() != null) {
+                copy.put(e.getKey(), e.getValue().clone());
+            }
         }
         return copy;
     }
@@ -95,8 +96,14 @@ public class Kit {
     public Map<String, ItemStack> cloneArmor() {
         Map<String, ItemStack> copy = new HashMap<>();
         for (Map.Entry<String, ItemStack> e : armor.entrySet()) {
-            copy.put(e.getKey(), e.getValue().clone());
+            if (e.getValue() != null) {
+                copy.put(e.getKey(), e.getValue().clone());
+            }
         }
         return copy;
+    }
+
+    public List<PotionEffect> cloneEffects() {
+        return new ArrayList<>(effects);
     }
 }

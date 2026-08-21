@@ -10,12 +10,14 @@ storage:
     password: ""
 
 arenas:
-  # World that generated arena copies are pasted into
+  # World that generated arena copies are pasted into. Created automatically if missing.
   world: duels_world
   # Spacing (in blocks) between generated arena copies on the grid
   spacing: 250
   # How many spare (unreserved) arena copies to keep ready per template
   min-spare-copies: 2
+  # Width/depth of the builtin stone platform used when no NBT templates exist
+  builtin-size: 25
 
 countdown:
   seconds: 5
@@ -36,22 +38,45 @@ queue:
 
 spectator:
   enabled: true
-  hide-spectators-from-participants: false
+  hide-spectators-from-participants: true
   allow-spectator-chat: true
+  isolate-duel-chat: true
 
 messages:
   prefix: "&8[&bDuels&8] &r"
   challenge-sent: "%prefix%&fYou challenged &b%target%&f to a duel using kit &b%kit%&f."
-  challenge-received: "%prefix%&b%player%&f has challenged you to a duel! Type &b/duel accept %player%&f to accept."
+  challenge-received: "%prefix%&b%player%&f has challenged you to a duel with kit &b%kit%&f! Type &b/duel accept %player%&f to accept."
   challenge-expired: "%prefix%&cYour challenge to %target% has expired."
+  challenge-denied: "%prefix%&c%player% declined your duel request."
+  challenge-denied-self: "%prefix%&cYou declined the duel request."
+  cannot-challenge-self: "%prefix%&cYou cannot duel yourself."
+  duplicate-request: "%prefix%&cThat player already has a pending duel request."
+  invalid-kit: "%prefix%&cUnknown kit: &f%kit%"
+  no-pending-request: "%prefix%&cYou have no pending duel request to accept."
+  challenger-offline: "%prefix%&cThat player is no longer online."
   duel-starting: "%prefix%&fYour duel is starting in an available arena..."
   duel-ended-win: "%prefix%&a&lYou won! &r&fvs %opponent% (%kit%)"
   duel-ended-loss: "%prefix%&c&lYou lost. &r&fvs %opponent% (%kit%)"
+  duel-ended-draw: "%prefix%&eThe duel ended in a draw."
+  duel-forfeit: "%prefix%&cYou forfeited the duel."
   no-arenas-available: "%prefix%&cNo arenas are available right now, please try again shortly."
-  queue-joined: "%prefix%&fJoined the queue for kit &b%kit%&f."
+  queue-joined: "%prefix%&fJoined the queue for kit &b%kit%&f. Waiting for an opponent..."
   queue-left: "%prefix%&fLeft the queue for kit &b%kit%&f."
+  not-in-queue: "%prefix%&cYou are not in a queue."
   already-in-queue: "%prefix%&cYou are already queued for &b%kit%&f."
   already-in-duel: "%prefix%&cYou are already in a duel."
+  opponent-in-duel: "%prefix%&cThat player is already in a duel."
   player-not-found: "%prefix%&cThat player could not be found."
   spectating-started: "%prefix%&fNow spectating &b%player%&f's duel."
+  spectating-disabled: "%prefix%&cSpectating is disabled."
+  spectating-not-in-duel: "%prefix%&cThat player is not currently in a duel."
+  cannot-spectate: "%prefix%&cYou cannot spectate right now."
   forfeit-quit: "%prefix%&c%player% disconnected and forfeited the duel."
+  reconnect-wait: "%prefix%&e%player% disconnected. Waiting &f%seconds%s &efor them to reconnect..."
+  reconnect-resume: "%prefix%&a%player% reconnected. The duel continues!"
+  countdown-cancelled: "%prefix%&cThe duel countdown was cancelled."
+  not-in-duel: "%prefix%&cYou are not in a duel."
+  usage-challenge: "%prefix%&cUsage: /duel <player> [kit]  or  /duel challenge <player> <kit>"
+  usage-queue: "%prefix%&cUsage: /duel queue <kit>"
+  usage-spectate: "%prefix%&cUsage: /duel spectate <player>"
+  help: "%prefix%&f/duel <player> [kit] &7- challenge a player\n%prefix%&f/duel accept [player] &7- accept a challenge\n%prefix%&f/duel deny &7- decline a challenge\n%prefix%&f/duel queue <kit> &7- join matchmaking\n%prefix%&f/duel leave &7- leave queue or forfeit\n%prefix%&f/duel spectate <player>\n%prefix%&f/duel stats [player]\n%prefix%&f/duel top [kit]"

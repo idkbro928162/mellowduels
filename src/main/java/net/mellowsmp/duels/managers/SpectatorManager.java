@@ -2,11 +2,9 @@ package net.mellowsmp.duels.managers;
 
 import net.mellowsmp.duels.MellowDuels;
 import net.mellowsmp.duels.models.Arena;
-import net.mellowsmp.duels.models.PlayerState;
 import org.bukkit.GameMode;
 import org.bukkit.entity.Player;
 
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -21,20 +19,43 @@ public class SpectatorManager {
         this.plugin = plugin;
     }
 
-    public void startSpectating(Player spectator, String sessionId, Arena arena) {
+    public boolean startSpectating(Player spectator, String sessionId, Arena arena, Player... participants) {
+        if (plugin.getDuelManager().isInDuel(spectator.getUniqueId())) {
+            return false;
+        }
+        if (isSpectating(spectator.getUniqueId())) {
+            stopSpectating(spectator);
+        }
         plugin.getPlayerStateManager().save(spectator);
         spectatingSessionBySpectator.put(spectator.getUniqueId(), sessionId);
+        spectator.closeInventory();
         spectator.setGameMode(GameMode.SPECTATOR);
+        spectator.setAllowFlight(true);
+        spectator.setFlying(true);
         if (arena.getSpectatorSpawn() != null) {
             spectator.teleport(arena.getSpectatorSpawn());
         } else {
-            spectator.teleport(arena.getOrigin());
+            spectator.teleport(arena.spawnOrOrigin(arena.getOrigin()));
         }
+
+        if (plugin.getConfigManager().hideSpectatorsFromParticipants()) {
+            for (Player participant : participants) {
+                if (participant != null && participant.isOnline()) {
+                    participant.hidePlayer(plugin, spectator);
+                }
+            }
+        }
+        return true;
     }
 
     public void stopSpectating(Player spectator) {
-        spectatingSessionBySpectator.remove(spectator.getUniqueId());
-        plugin.getPlayerStateManager().restore(spectator);
+        String sessionId = spectatingSessionBySpectator.remove(spectator.getUniqueId());
+        for (Player other : plugin.getServer().getOnlinePlayers()) {
+            other.showPlayer(plugin, spectator);
+        }
+        if (sessionId != null) {
+            plugin.getPlayerStateManager().restore(spectator);
+        }
     }
 
     public boolean isSpectating(UUID uuid) {
@@ -52,12 +73,25 @@ public class SpectatorManager {
                 Player p = plugin.getServer().getPlayer(e.getKey());
                 if (p != null) {
                     stopSpectating(p);
+                } else {
+                    spectatingSessionBySpectator.remove(e.getKey());
                 }
             }
         }
     }
 
+    public void stopAll() {
+        for (UUID uuid : Set.copyOf(spectatingSessionBySpectator.keySet())) {
+            Player p = plugin.getServer().getPlayer(uuid);
+            if (p != null) {
+                stopSpectating(p);
+            } else {
+                spectatingSessionBySpectator.remove(uuid);
+            }
+        }
+    }
+
     public Set<UUID> getSpectators() {
-        return spectatingSessionBySpectator.keySet();
+        return Set.copyOf(spectatingSessionBySpectator.keySet());
     }
 }
