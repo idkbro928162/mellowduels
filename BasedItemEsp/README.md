@@ -17,10 +17,12 @@ Also available as a GitHub Actions artifact on the **Build BasedItemEsp** workfl
 - Java 17+
 
 ## Behavior
-- Hides dropped items (and stacker holograms) with no line of sight
+- Hides **every** dropped item (all materials — glow ink sac, grass, etc.) with no line of sight
+- Hard-hide: Paper `hideEntity` + ProtocolLib `ENTITY_DESTROY`
 - Vertical coverage: full world height (bedrock / min height → build limit)
 - Horizontal: `max-distance: -1` = no limit (loaded entity window)
 - **No bypass** — applies to everyone, including OP
+- Stacker holograms hidden with the item
 
 ## Build
 ```bash

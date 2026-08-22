@@ -5,17 +5,20 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Per-player visibility cache and client-shown state.
- * All maps are concurrent for safe access from packet + scheduler threads
- * (mutations that touch Bukkit entities still run on the main thread).
  */
 public final class PlayerData {
 
-    public record CacheEntry(boolean visible, long checkedAtTick) {
+    public record CacheEntry(boolean visible, long checkedAtTick, double x, double y, double z) {
+        public boolean movedFrom(double nx, double ny, double nz, double thresholdSq) {
+            double dx = nx - x;
+            double dy = ny - y;
+            double dz = nz - z;
+            return (dx * dx + dy * dy + dz * dz) >= thresholdSq;
+        }
     }
 
     private final UUID playerId;
     private final ConcurrentHashMap<Integer, CacheEntry> visibilityCache = new ConcurrentHashMap<>();
-    /** Whether this player's client currently has the entity shown. */
     private final ConcurrentHashMap<Integer, Boolean> clientVisible = new ConcurrentHashMap<>();
 
     public PlayerData(UUID playerId) {
@@ -38,8 +41,17 @@ public final class PlayerData {
         return visibilityCache.get(entityId);
     }
 
+    public void putCache(int entityId, boolean visible, long tick, double x, double y, double z) {
+        visibilityCache.put(entityId, new CacheEntry(visible, tick, x, y, z));
+    }
+
     public void putCache(int entityId, boolean visible, long tick) {
-        visibilityCache.put(entityId, new CacheEntry(visible, tick));
+        CacheEntry old = visibilityCache.get(entityId);
+        if (old != null) {
+            visibilityCache.put(entityId, new CacheEntry(visible, tick, old.x(), old.y(), old.z()));
+        } else {
+            visibilityCache.put(entityId, new CacheEntry(visible, tick, 0, 0, 0));
+        }
     }
 
     public boolean isClientVisible(int entityId) {
