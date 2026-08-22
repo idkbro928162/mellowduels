@@ -60,7 +60,12 @@ public class StatsManager {
                 if (!plugin.getDataFolder().exists()) {
                     plugin.getDataFolder().mkdirs();
                 }
-                Class.forName("org.sqlite.JDBC");
+                // Load driver by class name (not relocated) so SPI / DriverManager both work
+                try {
+                    Class.forName("org.sqlite.JDBC");
+                } catch (ClassNotFoundException e) {
+                    throw new SQLException("sqlite-jdbc is missing from the plugin jar", e);
+                }
                 connection = DriverManager.getConnection("jdbc:sqlite:" + dbFile.getAbsolutePath());
             }
             createTables();
