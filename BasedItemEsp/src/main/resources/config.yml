@@ -1,0 +1,22 @@
+settings:
+  enabled: true
+  # Horizontal reach. -1 = no limit (uses a large loaded-entity window).
+  # Vertical is always full world height (bedrock -> build limit).
+  # Applies to EVERY dropped item (all materials).
+  max-distance: -1
+  # How often visibility is rechecked (in ticks)
+  recheck-ticks: 2
+  # If true, items without LOS are fully hidden from the client
+  hide-completely: true
+  # Hide item-stacker holograms (ArmorStand / TextDisplay nametags like "Grass Block x 1")
+  hide-stacker-holograms: true
+  # How close a hologram must be to a dropped item to count as a stacker label
+  hologram-item-radius: 2.5
+  # Extra console logging
+  debug: false
+
+messages:
+  prefix: '&8[&6BasedItemEsp&8]&r '
+  enabled: '&aAnti Item-ESP is enabled.'
+  disabled: '&cAnti Item-ESP is disabled.'
+  no-protocollib: '&cProtocolLib is required. Plugin disabled.'

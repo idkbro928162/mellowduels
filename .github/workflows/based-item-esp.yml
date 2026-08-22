@@ -1,0 +1,39 @@
+name: Build BasedItemEsp
+
+on:
+  push:
+    branches: [ main, master, 'cursor/based-item-esp-fefe' ]
+    paths:
+      - 'BasedItemEsp/**'
+      - '.github/workflows/based-item-esp.yml'
+  pull_request:
+    paths:
+      - 'BasedItemEsp/**'
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: BasedItemEsp
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+          cache-dependency-path: BasedItemEsp/pom.xml
+
+      - name: Build with Maven
+        run: mvn -B -U package -DskipTests
+
+      - name: Upload BasedItemEsp jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: BasedItemEsp-jar
+          path: BasedItemEsp/target/BasedItemEsp.jar
