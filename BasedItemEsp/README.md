@@ -16,15 +16,18 @@ Also available as a GitHub Actions artifact on the **Build BasedItemEsp** workfl
 - ProtocolLib 5.1.0+
 - Java 17+
 
+## Behavior
+- Hides dropped items (and stacker holograms) with no line of sight
+- Vertical coverage: full world height (bedrock / min height → build limit)
+- Horizontal: `max-distance: -1` = no limit (loaded entity window)
+- **No bypass** — applies to everyone, including OP
+
 ## Build
 ```bash
 cd BasedItemEsp
 mvn -q package
 ```
 Jar: `target/BasedItemEsp.jar`
-
-## Permission
-- `itemesp.bypass` (default: op) — see all items regardless of LOS
 
 ## Config
 See `src/main/resources/config.yml`

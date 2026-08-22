@@ -66,9 +66,6 @@ public final class ItemPacketListener {
         if (player == null || !player.isOnline()) {
             return;
         }
-        if (player.hasPermission("itemesp.bypass")) {
-            return;
-        }
 
         PacketContainer packet = event.getPacket();
         EntityType type = readEntityType(packet);

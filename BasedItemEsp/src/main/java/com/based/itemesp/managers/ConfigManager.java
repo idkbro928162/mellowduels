@@ -13,6 +13,7 @@ public final class ConfigManager {
     private final BasedItemEsp plugin;
 
     private boolean enabled;
+    /** Horizontal max distance; {@code < 0} means unlimited. */
     private double maxDistance;
     private int recheckTicks;
     private boolean hideCompletely;
@@ -34,7 +35,7 @@ public final class ConfigManager {
         FileConfiguration config = plugin.getConfig();
 
         enabled = config.getBoolean("settings.enabled", true);
-        maxDistance = config.getDouble("settings.max-distance", 32.0D);
+        maxDistance = config.getDouble("settings.max-distance", -1.0D);
         recheckTicks = Math.max(1, config.getInt("settings.recheck-ticks", 5));
         hideCompletely = config.getBoolean("settings.hide-completely", true);
         hideStackerHolograms = config.getBoolean("settings.hide-stacker-holograms", true);
@@ -82,7 +83,25 @@ public final class ConfigManager {
         return enabled;
     }
 
+    /**
+     * Horizontal scan/LOS cap. Values {@code < 0} mean unlimited.
+     */
     public double getMaxDistance() {
+        return maxDistance;
+    }
+
+    public boolean isUnlimitedDistance() {
+        return maxDistance < 0.0D;
+    }
+
+    /**
+     * Effective horizontal radius for entity scans (unlimited uses a large loaded-chunk window).
+     */
+    public double getHorizontalScanRadius() {
+        if (isUnlimitedDistance()) {
+            // Large enough to cover typical client entity render + simulation distance.
+            return 512.0D;
+        }
         return maxDistance;
     }
 

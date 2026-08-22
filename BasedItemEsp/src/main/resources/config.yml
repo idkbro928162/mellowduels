@@ -1,8 +1,9 @@
 settings:
   enabled: true
-  # Maximum distance (blocks) at which items can be revealed
-  max-distance: 32.0
-  # How often visibility is rechecked per player-item pair (in ticks)
+  # Horizontal reach. -1 = no limit (all loaded entities around the player).
+  # Vertical is always full world height (bedrock -> build limit).
+  max-distance: -1
+  # How often visibility is rechecked (in ticks)
   recheck-ticks: 5
   # If true, items without LOS are fully hidden from the client
   hide-completely: true

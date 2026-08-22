@@ -5,6 +5,7 @@ import com.based.itemesp.data.PlayerData;
 import org.bukkit.Bukkit;
 import org.bukkit.FluidCollisionMode;
 import org.bukkit.Location;
+import org.bukkit.World;
 import org.bukkit.entity.ArmorStand;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
@@ -15,6 +16,7 @@ import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.util.RayTraceResult;
 import org.bukkit.util.Vector;
 
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
@@ -22,6 +24,9 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Core LOS + cache + periodic hide/show logic for dropped items and stacker holograms.
+ * <p>
+ * No bypass permission — applies to every player. Vertical coverage is always
+ * full world height (min height / bedrock → max build height).
  */
 public final class VisibilityManager {
 
@@ -86,6 +91,20 @@ public final class VisibilityManager {
         return "ARMOR_STAND".equals(name) || "TEXT_DISPLAY".equals(name);
     }
 
+    /** Full vertical half-extent: bedrock/min height → build limit. */
+    public static double fullWorldHeightRadius(World world) {
+        if (world == null) {
+            return 512.0D;
+        }
+        return Math.max(64.0D, (world.getMaxHeight() - world.getMinHeight()) + 16.0D);
+    }
+
+    public Collection<Entity> findNearbyTracked(Player player) {
+        double horizontal = config.getHorizontalScanRadius();
+        double vertical = fullWorldHeightRadius(player.getWorld());
+        return player.getNearbyEntities(horizontal, vertical, horizontal);
+    }
+
     /**
      * Stacker labels: named armor stands / text displays, especially near a dropped item.
      */
@@ -137,9 +156,8 @@ public final class VisibilityManager {
         Location aim = target.clone().add(0.0D, TARGET_Y_OFFSET, 0.0D);
         Vector delta = aim.toVector().subtract(eye.toVector());
         double distance = delta.length();
-        double maxDistance = config.getMaxDistance();
 
-        if (distance > maxDistance) {
+        if (!config.isUnlimitedDistance() && distance > config.getMaxDistance()) {
             return false;
         }
         if (distance < 1.0E-4D) {
@@ -173,9 +191,6 @@ public final class VisibilityManager {
         if (!config.isEnabled() || !config.isHideCompletely()) {
             return true;
         }
-        if (player.hasPermission("itemesp.bypass")) {
-            return true;
-        }
         if (entity == null || !entity.isValid()) {
             return false;
         }
@@ -200,9 +215,6 @@ public final class VisibilityManager {
         if (!config.isEnabled() || !config.isHideCompletely()) {
             return true;
         }
-        if (player.hasPermission("itemesp.bypass")) {
-            return true;
-        }
 
         PlayerData data = getOrCreate(player);
         long now = player.getWorld().getFullTime();
@@ -220,9 +232,6 @@ public final class VisibilityManager {
 
     public void applyVisibility(Player player, Entity entity) {
         if (!config.isEnabled() || !config.isHideCompletely()) {
-            return;
-        }
-        if (player.hasPermission("itemesp.bypass")) {
             return;
         }
         if (entity == null || !entity.isValid()) {
@@ -307,9 +316,8 @@ public final class VisibilityManager {
             return;
         }
 
-        Entity entity = findEntityById(player, entityId);
+        Entity entity = findEntityById(player, entityId, packetLocation);
         if (entity == null) {
-            // Entity not tracked yet — if packet coords have no LOS, stay hidden.
             if (packetLocation != null && !shouldRevealLocation(player, entityId, packetLocation)) {
                 markHidden(player, entityId);
             }
@@ -325,26 +333,24 @@ public final class VisibilityManager {
             if (isStackerHologram(entity) || isNearDroppedItem(entity, config.getHologramItemRadius())) {
                 applyVisibility(player, entity);
             } else {
-                // Decorative armor stand — leave alone, undo cancel by showing.
                 player.showEntity(plugin, entity);
                 markShown(player, entityId);
             }
         }
     }
 
-    private Entity findEntityById(Player player, int entityId) {
-        // Prefer a local search — full world scans are too expensive.
-        for (Entity entity : player.getNearbyEntities(
-                config.getMaxDistance(), config.getMaxDistance(), config.getMaxDistance())) {
+    private Entity findEntityById(Player player, int entityId, Location hint) {
+        double horizontal = config.getHorizontalScanRadius();
+        double vertical = fullWorldHeightRadius(player.getWorld());
+
+        for (Entity entity : player.getNearbyEntities(horizontal, vertical, horizontal)) {
             if (entity.getEntityId() == entityId) {
                 return entity;
             }
         }
-        for (Entity entity : player.getWorld().getNearbyEntities(
-                player.getLocation(),
-                config.getMaxDistance(),
-                config.getMaxDistance(),
-                config.getMaxDistance())) {
+
+        Location center = hint != null ? hint : player.getLocation();
+        for (Entity entity : player.getWorld().getNearbyEntities(center, horizontal, vertical, horizontal)) {
             if (entity.getEntityId() == entityId) {
                 return entity;
             }
@@ -357,17 +363,11 @@ public final class VisibilityManager {
             return;
         }
 
-        double range = config.getMaxDistance();
-
         for (Player player : Bukkit.getOnlinePlayers()) {
-            if (player.hasPermission("itemesp.bypass")) {
-                continue;
-            }
-
             PlayerData data = getOrCreate(player);
             Set<Integer> seen = new HashSet<>();
 
-            for (Entity entity : player.getNearbyEntities(range, range, range)) {
+            for (Entity entity : findNearbyTracked(player)) {
                 if (!entity.isValid()) {
                     continue;
                 }
