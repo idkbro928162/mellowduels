@@ -1,0 +1,147 @@
+# BasedProtection 1.1.1
+# Packet-only. No real blocks changed. NO BYPASS for anyone.
+
+enabled: true
+
+# Ignored — bypass is hard-disabled in code for every player (including OWNER / *).
+bypass-permission: basedprotection.bypass.disabled
+
+debug: false
+
+# Underground freecam wall (surface players see fake deepslate below this Y)
+blocks:
+  enabled: true
+  hide-below-y: 0
+  fake-block-material: DEEPSLATE
+  reveal-margin: 12
+  hide-margin: 32
+  reveal-radius: -1
+  hide-block-entities: true
+  hide-block-updates: true
+
+# Cloaked EVERYWHERE in the world (any Y): containers, spawners, AND ores (anti-xray).
+# Revealed only with real line-of-sight from the player's eyes.
+tile-entities:
+  enabled: true
+  # Chests/spawners: stone when blocked / not in sight; real block when you have LOS.
+  reveal-distance: 48
+  check-interval-ticks: 2
+  reassert-interval-ticks: 20
+  max-raycasts-per-tick: 4000
+  hide-block-entity-nbt: true
+  fake-block-material: STONE
+  deep-fake-block-material: DEEPSLATE
+  deep-below-y: 0
+
+  materials:
+    - SPAWNER
+    - TRIAL_SPAWNER
+    - VAULT
+    - CHEST
+    - TRAPPED_CHEST
+    - BARREL
+    - HOPPER
+    - DISPENSER
+    - DROPPER
+    - FURNACE
+    - BLAST_FURNACE
+    - SMOKER
+    - BREWING_STAND
+    - BEACON
+    - SHULKER_BOX
+    - WHITE_SHULKER_BOX
+    - ORANGE_SHULKER_BOX
+    - MAGENTA_SHULKER_BOX
+    - LIGHT_BLUE_SHULKER_BOX
+    - YELLOW_SHULKER_BOX
+    - LIME_SHULKER_BOX
+    - PINK_SHULKER_BOX
+    - GRAY_SHULKER_BOX
+    - LIGHT_GRAY_SHULKER_BOX
+    - CYAN_SHULKER_BOX
+    - PURPLE_SHULKER_BOX
+    - BLUE_SHULKER_BOX
+    - BROWN_SHULKER_BOX
+    - GREEN_SHULKER_BOX
+    - RED_SHULKER_BOX
+    - BLACK_SHULKER_BOX
+
+  # Ores + amethyst — scanned in every chunk, world-wide anti-xray
+  scan-materials:
+    - DIAMOND_ORE
+    - DEEPSLATE_DIAMOND_ORE
+    - EMERALD_ORE
+    - DEEPSLATE_EMERALD_ORE
+    - GOLD_ORE
+    - DEEPSLATE_GOLD_ORE
+    - NETHER_GOLD_ORE
+    - IRON_ORE
+    - DEEPSLATE_IRON_ORE
+    - COPPER_ORE
+    - DEEPSLATE_COPPER_ORE
+    - COAL_ORE
+    - DEEPSLATE_COAL_ORE
+    - LAPIS_ORE
+    - DEEPSLATE_LAPIS_ORE
+    - REDSTONE_ORE
+    - DEEPSLATE_REDSTONE_ORE
+    - ANCIENT_DEBRIS
+    - NETHER_QUARTZ_ORE
+    - AMETHYST_CLUSTER
+    - LARGE_AMETHYST_BUD
+    - MEDIUM_AMETHYST_BUD
+    - SMALL_AMETHYST_BUD
+    - BUDDING_AMETHYST
+
+  # Full overworld + nether ore bands
+  scan-min-y: -64
+  scan-max-y: 320
+  scan-reveal-distance: 16
+  scan-chunks-per-sweep: 8
+  scan-cache-seconds: 120
+
+  block-entity-types:
+    - mob_spawner
+    - trial_spawner
+    - vault
+    - chest
+    - trapped_chest
+    - barrel
+    - hopper
+    - dispenser
+    - dropper
+    - furnace
+    - blast_furnace
+    - smoker
+    - brewing_stand
+    - beacon
+    - shulker_box
+
+entities:
+  enabled: true
+  check-interval-ticks: 5
+  scan-radius: 96
+  grace-blocks: 2
+  max-distance: -1
+  hide-players: true
+  ignored-types:
+    - TEXT_DISPLAY
+    - ITEM_DISPLAY
+    - BLOCK_DISPLAY
+    - INTERACTION
+  line-of-sight:
+    enabled: true
+    max-distance: 96.0
+    max-checks-per-tick: 800
+    fails-before-hiding: 1
+
+performance:
+  chunk-refreshes-per-tick: 24
+  refresh-radius: 12
+  max-queued-chunks: 20000
+
+worlds:
+  - "*"
+
+world-overrides:
+  world_nether: 20

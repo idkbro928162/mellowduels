@@ -1,0 +1,26 @@
+name: BasedProtection
+version: '1.1.1'
+main: dev.mellow.antiesp.AntiESPPlugin
+api-version: '1.21'
+folia-supported: true
+author: Magnus
+description: Unified packet anti-ESP / anti-freecam / anti-xray. No bypass.
+depend:
+  - packetevents
+
+commands:
+  antiesp:
+    description: BasedProtection admin commands.
+    usage: /antiesp <reload|status|toggle>
+    permission: antiesp.admin
+    aliases: [basedprotection, bp, aesp, fakewall, fw]
+
+permissions:
+  antiesp.admin:
+    description: Use BasedProtection admin commands.
+    default: op
+  basedprotection.admin:
+    description: Alias admin node.
+    default: op
+    children:
+      antiesp.admin: true
