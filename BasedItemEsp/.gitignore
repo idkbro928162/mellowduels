@@ -4,3 +4,6 @@ target/
 .classpath
 .project
 .settings/
+# Keep dist/BasedItemEsp.jar downloadable from GitHub
+!dist/
+!dist/*.jar
