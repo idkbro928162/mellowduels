@@ -3,9 +3,13 @@ settings:
   # Maximum distance (blocks) at which items can be revealed
   max-distance: 32.0
   # How often visibility is rechecked per player-item pair (in ticks)
-  recheck-ticks: 10
+  recheck-ticks: 5
   # If true, items without LOS are fully hidden from the client
   hide-completely: true
+  # Hide item-stacker holograms (ArmorStand / TextDisplay nametags like "Grass Block x 1")
+  hide-stacker-holograms: true
+  # How close a hologram must be to a dropped item to count as a stacker label
+  hologram-item-radius: 2.0
   # Extra console logging
   debug: false
 

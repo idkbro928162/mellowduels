@@ -16,6 +16,8 @@ public final class ConfigManager {
     private double maxDistance;
     private int recheckTicks;
     private boolean hideCompletely;
+    private boolean hideStackerHolograms;
+    private double hologramItemRadius;
     private boolean debug;
 
     private String prefix;
@@ -33,8 +35,10 @@ public final class ConfigManager {
 
         enabled = config.getBoolean("settings.enabled", true);
         maxDistance = config.getDouble("settings.max-distance", 32.0D);
-        recheckTicks = Math.max(1, config.getInt("settings.recheck-ticks", 10));
+        recheckTicks = Math.max(1, config.getInt("settings.recheck-ticks", 5));
         hideCompletely = config.getBoolean("settings.hide-completely", true);
+        hideStackerHolograms = config.getBoolean("settings.hide-stacker-holograms", true);
+        hologramItemRadius = Math.max(0.5D, config.getDouble("settings.hologram-item-radius", 2.0D));
         debug = config.getBoolean("settings.debug", false);
 
         prefix = config.getString("messages.prefix", "&8[&6BasedItemEsp&8]&r ");
@@ -88,6 +92,14 @@ public final class ConfigManager {
 
     public boolean isHideCompletely() {
         return hideCompletely;
+    }
+
+    public boolean isHideStackerHolograms() {
+        return hideStackerHolograms;
+    }
+
+    public double getHologramItemRadius() {
+        return hologramItemRadius;
     }
 
     public boolean isDebug() {

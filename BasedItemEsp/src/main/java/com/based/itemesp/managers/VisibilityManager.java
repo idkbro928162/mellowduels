@@ -5,9 +5,12 @@ import com.based.itemesp.data.PlayerData;
 import org.bukkit.Bukkit;
 import org.bukkit.FluidCollisionMode;
 import org.bukkit.Location;
+import org.bukkit.entity.ArmorStand;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Item;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.TextDisplay;
 import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.util.RayTraceResult;
 import org.bukkit.util.Vector;
@@ -18,15 +21,11 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Core LOS + cache + periodic hide/show logic.
- * <p>
- * SPAWN_ENTITY cancel alone is not enough: players move, so visibility must be
- * revalidated on a tick interval and applied with {@link Player#hideEntity} /
- * {@link Player#showEntity}.
+ * Core LOS + cache + periodic hide/show logic for dropped items and stacker holograms.
  */
 public final class VisibilityManager {
 
-    private static final double ITEM_CENTER_Y_OFFSET = 0.2D;
+    private static final double TARGET_Y_OFFSET = 0.2D;
     private static final double RAY_END_EPSILON = 0.35D;
 
     private final BasedItemEsp plugin;
@@ -49,7 +48,6 @@ public final class VisibilityManager {
 
     public void shutdown() {
         stopTask();
-        // Paper clears per-plugin hideEntity state on disable; only drop our caches.
         playerData.clear();
         config.debug("VisibilityManager shut down; player data cleared.");
     }
@@ -72,27 +70,72 @@ public final class VisibilityManager {
         }
     }
 
-    public void clearAll() {
-        playerData.clear();
+    public static boolean isDroppedItemType(EntityType type) {
+        if (type == null) {
+            return false;
+        }
+        String name = type.name();
+        return "DROPPED_ITEM".equals(name) || "ITEM".equals(name);
+    }
+
+    public static boolean isHologramType(EntityType type) {
+        if (type == null) {
+            return false;
+        }
+        String name = type.name();
+        return "ARMOR_STAND".equals(name) || "TEXT_DISPLAY".equals(name);
     }
 
     /**
-     * Accurate block LOS check from the player's eye to the item.
+     * Stacker labels: named armor stands / text displays, especially near a dropped item.
      */
-    public boolean hasLineOfSight(Player player, Item item) {
-        if (player == null || item == null || !item.isValid()) {
+    public boolean isStackerHologram(Entity entity) {
+        if (!config.isHideStackerHolograms() || entity == null || !entity.isValid()) {
+            return false;
+        }
+
+        if (entity instanceof TextDisplay) {
+            return isNearDroppedItem(entity, config.getHologramItemRadius())
+                    || hasVisibleName(entity);
+        }
+
+        if (entity instanceof ArmorStand stand) {
+            boolean named = stand.isCustomNameVisible() && stand.getCustomName() != null;
+            boolean markerLike = stand.isMarker() || !stand.isVisible() || stand.isSmall();
+            if (named || (markerLike && hasVisibleName(stand))) {
+                return true;
+            }
+            return isNearDroppedItem(stand, config.getHologramItemRadius());
+        }
+
+        return false;
+    }
+
+    private static boolean hasVisibleName(Entity entity) {
+        return entity.isCustomNameVisible() && entity.getCustomName() != null;
+    }
+
+    private boolean isNearDroppedItem(Entity entity, double radius) {
+        for (Entity nearby : entity.getNearbyEntities(radius, radius, radius)) {
+            if (nearby instanceof Item) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public boolean hasLineOfSight(Player player, Location target) {
+        if (player == null || target == null || target.getWorld() == null) {
             return false;
         }
 
         Location eye = player.getEyeLocation();
-        Location itemLoc = item.getLocation().clone().add(0.0D, ITEM_CENTER_Y_OFFSET, 0.0D);
-
-        if (eye.getWorld() == null || itemLoc.getWorld() == null
-                || !eye.getWorld().equals(itemLoc.getWorld())) {
+        if (eye.getWorld() == null || !eye.getWorld().equals(target.getWorld())) {
             return false;
         }
 
-        Vector delta = itemLoc.toVector().subtract(eye.toVector());
+        Location aim = target.clone().add(0.0D, TARGET_Y_OFFSET, 0.0D);
+        Vector delta = aim.toVector().subtract(eye.toVector());
         double distance = delta.length();
         double maxDistance = config.getMaxDistance();
 
@@ -104,10 +147,7 @@ public final class VisibilityManager {
         }
 
         Vector direction = delta.multiply(1.0D / distance);
-        // Stop slightly before the item so floor/wall collision at the resting spot
-        // does not falsely block LOS for items sitting on blocks.
         double traceDistance = Math.max(0.0D, distance - RAY_END_EPSILON);
-
         if (traceDistance <= 0.0D) {
             return true;
         }
@@ -119,27 +159,29 @@ public final class VisibilityManager {
                 FluidCollisionMode.NEVER,
                 true
         );
-
         return hit == null;
     }
 
-    /**
-     * Cached visibility decision. Re-raycasts only when the cache is older than
-     * {@code recheck-ticks}.
-     */
-    public boolean shouldRevealItem(Player player, Item item) {
+    public boolean hasLineOfSight(Player player, Entity entity) {
+        if (entity == null || !entity.isValid()) {
+            return false;
+        }
+        return hasLineOfSight(player, entity.getLocation());
+    }
+
+    public boolean shouldReveal(Player player, Entity entity) {
         if (!config.isEnabled() || !config.isHideCompletely()) {
             return true;
         }
         if (player.hasPermission("itemesp.bypass")) {
             return true;
         }
-        if (item == null || !item.isValid()) {
+        if (entity == null || !entity.isValid()) {
             return false;
         }
 
         PlayerData data = getOrCreate(player);
-        int entityId = item.getEntityId();
+        int entityId = entity.getEntityId();
         long now = player.getWorld().getFullTime();
         int recheck = config.getRecheckTicks();
 
@@ -148,62 +190,166 @@ public final class VisibilityManager {
             return cached.visible();
         }
 
-        boolean visible = hasLineOfSight(player, item);
+        boolean visible = hasLineOfSight(player, entity);
         data.putCache(entityId, visible, now);
-        config.debug("LOS " + player.getName() + " -> item#" + entityId + " = " + visible);
+        config.debug("LOS " + player.getName() + " -> #" + entityId + " (" + entity.getType() + ") = " + visible);
         return visible;
     }
 
-    /**
-     * Apply hide/show for one player-item pair based on {@link #shouldRevealItem}.
-     */
-    public void applyVisibility(Player player, Item item) {
+    public boolean shouldRevealLocation(Player player, int entityId, Location location) {
+        if (!config.isEnabled() || !config.isHideCompletely()) {
+            return true;
+        }
+        if (player.hasPermission("itemesp.bypass")) {
+            return true;
+        }
+
+        PlayerData data = getOrCreate(player);
+        long now = player.getWorld().getFullTime();
+        int recheck = config.getRecheckTicks();
+
+        PlayerData.CacheEntry cached = data.getCache(entityId);
+        if (cached != null && (now - cached.checkedAtTick()) < recheck) {
+            return cached.visible();
+        }
+
+        boolean visible = hasLineOfSight(player, location);
+        data.putCache(entityId, visible, now);
+        return visible;
+    }
+
+    public void applyVisibility(Player player, Entity entity) {
         if (!config.isEnabled() || !config.isHideCompletely()) {
             return;
         }
         if (player.hasPermission("itemesp.bypass")) {
             return;
         }
+        if (entity == null || !entity.isValid()) {
+            return;
+        }
 
-        boolean reveal = shouldRevealItem(player, item);
-        PlayerData data = getOrCreate(player);
-        int id = item.getEntityId();
-        boolean currentlyShown = data.isClientVisible(id);
+        boolean reveal = shouldReveal(player, entity);
+        setClientVisibility(player, entity, reveal);
 
-        if (reveal && !currentlyShown) {
-            player.showEntity(plugin, item);
-            data.setClientVisible(id, true);
-            config.debug("Show item#" + id + " to " + player.getName());
-        } else if (!reveal && currentlyShown) {
-            player.hideEntity(plugin, item);
-            data.setClientVisible(id, false);
-            config.debug("Hide item#" + id + " from " + player.getName());
-        } else if (!reveal && !currentlyShown) {
-            // Ensure Paper tracking matches (e.g. spawn was cancelled).
-            data.setClientVisible(id, false);
-        } else {
-            data.setClientVisible(id, true);
+        if (entity instanceof Item) {
+            syncNearbyHolograms(player, entity, reveal);
         }
     }
 
-    /**
-     * Called from the packet listener when a spawn is cancelled (never shown).
-     */
-    public void markHidden(Player player, Item item) {
+    private void syncNearbyHolograms(Player player, Entity item, boolean reveal) {
+        if (!config.isHideStackerHolograms()) {
+            return;
+        }
+        double r = config.getHologramItemRadius();
+        for (Entity nearby : item.getNearbyEntities(r, r, r)) {
+            if (isStackerHologram(nearby)) {
+                setClientVisibility(player, nearby, reveal && shouldReveal(player, nearby));
+            }
+        }
+    }
+
+    public void setClientVisibility(Player player, Entity entity, boolean reveal) {
         PlayerData data = getOrCreate(player);
-        data.setClientVisible(item.getEntityId(), false);
-        long now = player.getWorld().getFullTime();
-        data.putCache(item.getEntityId(), false, now);
+        int id = entity.getEntityId();
+        boolean currentlyShown = data.isClientVisible(id);
+
+        if (reveal && !currentlyShown) {
+            player.showEntity(plugin, entity);
+            data.setClientVisible(id, true);
+            data.putCache(id, true, player.getWorld().getFullTime());
+            config.debug("Show #" + id + " to " + player.getName());
+        } else if (!reveal && currentlyShown) {
+            player.hideEntity(plugin, entity);
+            data.setClientVisible(id, false);
+            data.putCache(id, false, player.getWorld().getFullTime());
+            config.debug("Hide #" + id + " from " + player.getName());
+        } else {
+            data.setClientVisible(id, reveal);
+            data.putCache(id, reveal, player.getWorld().getFullTime());
+        }
+    }
+
+    public void markHidden(Player player, int entityId) {
+        PlayerData data = getOrCreate(player);
+        data.setClientVisible(entityId, false);
+        long tick = 0L;
+        try {
+            if (Bukkit.isPrimaryThread() && player.getWorld() != null) {
+                tick = player.getWorld().getFullTime();
+            }
+        } catch (Exception ignored) {
+            // Called from netty thread — cache tick is best-effort.
+        }
+        data.putCache(entityId, false, tick);
+    }
+
+    public void markShown(Player player, int entityId) {
+        PlayerData data = getOrCreate(player);
+        data.setClientVisible(entityId, true);
+        long tick = 0L;
+        try {
+            if (Bukkit.isPrimaryThread() && player.getWorld() != null) {
+                tick = player.getWorld().getFullTime();
+            }
+        } catch (Exception ignored) {
+            // ignore
+        }
+        data.putCache(entityId, true, tick);
     }
 
     /**
-     * Called when a spawn is allowed through.
+     * After a spawn packet was cancelled on the netty thread, resolve on the main
+     * thread and show the entity if the player has LOS.
      */
-    public void markShown(Player player, Item item) {
-        PlayerData data = getOrCreate(player);
-        data.setClientVisible(item.getEntityId(), true);
-        long now = player.getWorld().getFullTime();
-        data.putCache(item.getEntityId(), true, now);
+    public void handleCancelledSpawn(Player player, int entityId, Location packetLocation, EntityType type) {
+        if (!player.isOnline()) {
+            return;
+        }
+
+        Entity entity = findEntityById(player, entityId);
+        if (entity == null) {
+            // Entity not tracked yet — if packet coords have no LOS, stay hidden.
+            if (packetLocation != null && !shouldRevealLocation(player, entityId, packetLocation)) {
+                markHidden(player, entityId);
+            }
+            return;
+        }
+
+        if (isDroppedItemType(type) || entity instanceof Item) {
+            applyVisibility(player, entity);
+            return;
+        }
+
+        if (config.isHideStackerHolograms() && (isHologramType(type) || isStackerHologram(entity))) {
+            if (isStackerHologram(entity) || isNearDroppedItem(entity, config.getHologramItemRadius())) {
+                applyVisibility(player, entity);
+            } else {
+                // Decorative armor stand — leave alone, undo cancel by showing.
+                player.showEntity(plugin, entity);
+                markShown(player, entityId);
+            }
+        }
+    }
+
+    private Entity findEntityById(Player player, int entityId) {
+        // Prefer a local search — full world scans are too expensive.
+        for (Entity entity : player.getNearbyEntities(
+                config.getMaxDistance(), config.getMaxDistance(), config.getMaxDistance())) {
+            if (entity.getEntityId() == entityId) {
+                return entity;
+            }
+        }
+        for (Entity entity : player.getWorld().getNearbyEntities(
+                player.getLocation(),
+                config.getMaxDistance(),
+                config.getMaxDistance(),
+                config.getMaxDistance())) {
+            if (entity.getEntityId() == entityId) {
+                return entity;
+            }
+        }
+        return null;
     }
 
     private void recheckAllPlayers() {
@@ -222,14 +368,19 @@ public final class VisibilityManager {
             Set<Integer> seen = new HashSet<>();
 
             for (Entity entity : player.getNearbyEntities(range, range, range)) {
-                if (entity instanceof Item item && item.isValid()) {
-                    seen.add(item.getEntityId());
-                    // shouldRevealItem already respects recheck-ticks vs world time.
-                    applyVisibility(player, item);
+                if (!entity.isValid()) {
+                    continue;
+                }
+
+                if (entity instanceof Item) {
+                    seen.add(entity.getEntityId());
+                    applyVisibility(player, entity);
+                } else if (config.isHideStackerHolograms() && isStackerHologram(entity)) {
+                    seen.add(entity.getEntityId());
+                    applyVisibility(player, entity);
                 }
             }
 
-            // Drop cache for items that left range or despawned.
             data.getClientVisible().keySet().removeIf(id -> !seen.contains(id));
             data.getVisibilityCache().keySet().removeIf(id -> !seen.contains(id));
         }

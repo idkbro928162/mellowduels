@@ -10,13 +10,16 @@ import com.comphenix.protocol.events.ListenerPriority;
 import com.comphenix.protocol.events.PacketAdapter;
 import com.comphenix.protocol.events.PacketContainer;
 import com.comphenix.protocol.events.PacketEvent;
-import org.bukkit.entity.Entity;
-import org.bukkit.entity.Item;
+import org.bukkit.Bukkit;
+import org.bukkit.Location;
+import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
 
 /**
- * Cancels {@link PacketType.Play.Server#SPAWN_ENTITY} for dropped items when the
- * receiving player does not have line of sight.
+ * Intercepts {@link PacketType.Play.Server#SPAWN_ENTITY}.
+ * <p>
+ * Packet handlers often run off the main thread, so we only read packet fields
+ * here, cancel suspicious spawns, then decide hide/show on the main thread.
  */
 public final class ItemPacketListener {
 
@@ -33,7 +36,7 @@ public final class ItemPacketListener {
 
     public void register() {
         ProtocolManager manager = ProtocolLibrary.getProtocolManager();
-        adapter = new PacketAdapter(plugin, ListenerPriority.HIGH, PacketType.Play.Server.SPAWN_ENTITY) {
+        adapter = new PacketAdapter(plugin, ListenerPriority.HIGHEST, PacketType.Play.Server.SPAWN_ENTITY) {
             @Override
             public void onPacketSending(PacketEvent event) {
                 handleSpawn(event);
@@ -68,41 +71,72 @@ public final class ItemPacketListener {
         }
 
         PacketContainer packet = event.getPacket();
-        Entity entity = resolveEntity(packet, player);
-        if (!(entity instanceof Item item) || !item.isValid()) {
+        EntityType type = readEntityType(packet);
+        if (type == null) {
             return;
         }
 
-        boolean reveal = visibilityManager.shouldRevealItem(player, item);
-        if (reveal) {
-            visibilityManager.markShown(player, item);
+        boolean droppedItem = VisibilityManager.isDroppedItemType(type);
+        boolean hologram = config.isHideStackerHolograms() && VisibilityManager.isHologramType(type);
+        if (!droppedItem && !hologram) {
             return;
         }
 
+        Integer entityId = readEntityId(packet);
+        if (entityId == null) {
+            return;
+        }
+
+        Location packetLocation = readLocation(packet, player);
+        // Cancel first — netty thread must not touch Bukkit entity APIs.
         event.setCancelled(true);
-        visibilityManager.markHidden(player, item);
-        config.debug("Cancelled item spawn#" + item.getEntityId() + " for " + player.getName());
+        visibilityManager.markHidden(player, entityId);
+
+        final int id = entityId;
+        final EntityType spawnType = type;
+        final Location loc = packetLocation == null ? null : packetLocation.clone();
+
+        Runnable decide = () -> visibilityManager.handleCancelledSpawn(player, id, loc, spawnType);
+        if (Bukkit.isPrimaryThread()) {
+            decide.run();
+        } else {
+            Bukkit.getScheduler().runTask(plugin, decide);
+        }
+
+        config.debug("Queued spawn gate #" + id + " type=" + type + " for " + player.getName());
     }
 
-    private Entity resolveEntity(PacketContainer packet, Player player) {
+    private EntityType readEntityType(PacketContainer packet) {
         try {
-            Entity fromModifier = packet.getEntityModifier(player.getWorld()).read(0);
-            if (fromModifier != null) {
-                return fromModifier;
-            }
-        } catch (Exception ignored) {
-            // Fall through to ID lookup.
+            return packet.getEntityTypeModifier().read(0);
+        } catch (Exception ex) {
+            config.debug("Could not read entity type: " + ex.getMessage());
+            return null;
         }
+    }
 
+    private Integer readEntityId(PacketContainer packet) {
         try {
-            Integer id = packet.getIntegers().read(0);
-            if (id == null) {
+            return packet.getIntegers().read(0);
+        } catch (Exception ex) {
+            config.debug("Could not read entity id: " + ex.getMessage());
+            return null;
+        }
+    }
+
+    private Location readLocation(PacketContainer packet, Player player) {
+        try {
+            double x = packet.getDoubles().read(0);
+            double y = packet.getDoubles().read(1);
+            double z = packet.getDoubles().read(2);
+            return new Location(player.getWorld(), x, y, z);
+        } catch (Exception ex) {
+            try {
+                // Some versions use doubles at different indices; ignore if unavailable.
+                return null;
+            } catch (Exception ignored) {
                 return null;
             }
-            return ProtocolLibrary.getProtocolManager().getEntityFromID(player.getWorld(), id);
-        } catch (Exception ex) {
-            config.debug("Failed to resolve SPAWN_ENTITY entity: " + ex.getMessage());
-            return null;
         }
     }
 }
